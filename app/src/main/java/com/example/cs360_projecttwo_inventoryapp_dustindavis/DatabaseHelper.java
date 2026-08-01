@@ -62,9 +62,19 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     // Additional normalized inventory item columns
     private static final String COL_ITEM_ACTIVE = "is_active";
+    private static final String COL_MODEL_NUMBER = "model_number";
 
     public DatabaseHelper(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
+    }
+
+    @Override
+    public void onConfigure(SQLiteDatabase db) {
+        super.onConfigure(db);
+
+        // Turn on foreign key checks so inventory items cannot reference
+        // manufacturers, categories, or locations that do not exist.
+        db.setForeignKeyConstraintsEnabled(true);
     }
 
     @Override
@@ -123,6 +133,37 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                         COL_WAREHOUSE_SHELF + " INTEGER NOT NULL" +
                         ");";
 
+        // This is the normalized replacement for the original inventory table.
+        // Manufacturer, category, and warehouse location are connected through
+        // foreign keys instead of repeating the same text for every item.
+        String createInventoryItemsTable =
+                "CREATE TABLE " + TABLE_INVENTORY_ITEMS + " (" +
+                        COL_ITEM_ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                        COL_MANUFACTURER_ID + " INTEGER NOT NULL, " +
+                        COL_CATEGORY_ID + " INTEGER NOT NULL, " +
+                        COL_LOCATION_ID + " INTEGER, " +
+                        COL_ITEM_NAME + " TEXT NOT NULL, " +
+                        COL_MODEL_NUMBER + " TEXT NOT NULL, " +
+                        COL_ITEM_SERIAL + " TEXT NOT NULL UNIQUE, " +
+                        COL_ITEM_SCU + " TEXT NOT NULL UNIQUE, " +
+                        COL_ITEM_QTY + " INTEGER NOT NULL DEFAULT 0 " +
+                        "CHECK (" + COL_ITEM_QTY + " >= 0), " +
+                        COL_ITEM_THRESHOLD + " INTEGER NOT NULL DEFAULT 0 " +
+                        "CHECK (" + COL_ITEM_THRESHOLD + " >= 0), " +
+                        COL_ITEM_NOTES + " TEXT, " +
+                        COL_ITEM_ACTIVE + " INTEGER NOT NULL DEFAULT 1 " +
+                        "CHECK (" + COL_ITEM_ACTIVE + " IN (0, 1)), " +
+
+                        "FOREIGN KEY (" + COL_MANUFACTURER_ID + ") REFERENCES " +
+                        TABLE_MANUFACTURERS + "(" + COL_MANUFACTURER_ID + "), " +
+
+                        "FOREIGN KEY (" + COL_CATEGORY_ID + ") REFERENCES " +
+                        TABLE_CATEGORIES + "(" + COL_CATEGORY_ID + "), " +
+
+                        "FOREIGN KEY (" + COL_LOCATION_ID + ") REFERENCES " +
+                        TABLE_LOCATIONS + "(" + COL_LOCATION_ID + ")" +
+                        ");";
+
         db.execSQL(createUsersTable);
         db.execSQL(createInventoryTable);
 
@@ -130,6 +171,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         db.execSQL(createManufacturersTable);
         db.execSQL(createCategoriesTable);
         db.execSQL(createLocationsTable);
+        db.execSQL(createInventoryItemsTable);
     }
 
     @Override
