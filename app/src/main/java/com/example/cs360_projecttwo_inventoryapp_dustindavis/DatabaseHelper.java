@@ -51,7 +51,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String COL_MANUFACTURER_ID = "manufacturer_id";
     private static final String COL_MANUFACTURER_NAME = "manufacturer_name";
 
-    // Category location columns
+    // Category table columns
     private static final String COL_CATEGORY_ID = "category_id";
     private static final String COL_CATEGORY_NAME = "category_name";
 
@@ -115,13 +115,15 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         String createManufacturersTable =
                 "CREATE TABLE " + TABLE_MANUFACTURERS + " (" +
                         COL_MANUFACTURER_ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                        COL_MANUFACTURER_NAME + " TEXT NOT NULL UNIQUE" +
+                        COL_MANUFACTURER_NAME +
+                        " TEXT NOT NULL UNIQUE COLLATE NOCASE" +
                         ");";
 
         String createCategoriesTable =
                 "CREATE TABLE " + TABLE_CATEGORIES + " (" +
                         COL_CATEGORY_ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                        COL_CATEGORY_NAME + " TEXT NOT NULL UNIQUE" +
+                        COL_CATEGORY_NAME +
+                        " TEXT NOT NULL UNIQUE COLLATE NOCASE" +
                         ");";
 
         // Store warehouse locations one time and let inventory items reference them.
@@ -129,8 +131,12 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         String createLocationsTable =
                 "CREATE TABLE " + TABLE_LOCATIONS + " (" +
                         COL_LOCATION_ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                        COL_WAREHOUSE_ROW + " INTEGER NOT NULL, " +
-                        COL_WAREHOUSE_SHELF + " INTEGER NOT NULL" +
+                        COL_WAREHOUSE_ROW + " " +
+                        "INTEGER NOT NULL CHECK (" + COL_WAREHOUSE_ROW + " > 0), " +
+                        COL_WAREHOUSE_SHELF + " " +
+                        "INTEGER NOT NULL CHECK (" + COL_WAREHOUSE_SHELF + " > 0), " +
+                        "UNIQUE (" + COL_WAREHOUSE_ROW + ", " +
+                        COL_WAREHOUSE_SHELF + ")" +
                         ");";
 
         // This is the normalized replacement for the original inventory table.
@@ -193,6 +199,176 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         // Recreate the database using the newest table definitions.
         onCreate(db);
+    }
+    private long getOrCreateManufacturerId(SQLiteDatabase db, String manufacturerName) {
+        // Look for an existing manufacturer before adding a new one.
+        try (Cursor cursor = db.query(
+                TABLE_MANUFACTURERS,
+                new String[] { COL_MANUFACTURER_ID },
+                COL_MANUFACTURER_NAME + " = ? COLLATE NOCASE",
+                new String[] { manufacturerName },
+                null,
+                null,
+                null
+        )) {
+            if (cursor.moveToFirst()) {
+                return cursor.getLong(
+                        cursor.getColumnIndexOrThrow(COL_MANUFACTURER_ID)
+                );
+            }
+        }
+
+        // Add the manufacturer only when it is not already in the table.
+        ContentValues values = new ContentValues();
+        values.put(COL_MANUFACTURER_NAME, manufacturerName);
+
+        return db.insertOrThrow(TABLE_MANUFACTURERS, null, values);
+    }
+    private long getOrCreateCategoryId(SQLiteDatabase db, String categoryName) {
+        // Look for an existing category before adding a new one.
+        try (Cursor cursor = db.query(
+                TABLE_CATEGORIES,
+                new String[] { COL_CATEGORY_ID },
+                COL_CATEGORY_NAME + " = ? COLLATE NOCASE",
+                new String[] { categoryName },
+                null,
+                null,
+                null
+        )) {
+            if (cursor.moveToFirst()) {
+                return cursor.getLong(
+                        cursor.getColumnIndexOrThrow(COL_CATEGORY_ID)
+                );
+            }
+        }
+
+        // Add the category only when it is not already in the table.
+        ContentValues values = new ContentValues();
+        values.put(COL_CATEGORY_NAME, categoryName);
+
+        return db.insertOrThrow(TABLE_CATEGORIES, null, values);
+    }
+    private long getOrCreateLocationId(
+            SQLiteDatabase db,
+            int warehouseRow,
+            int warehouseShelf
+    ) {
+        // Look for the exact row and shelf combination before creating a new location.
+        try (Cursor cursor = db.query(
+                TABLE_LOCATIONS,
+                new String[] { COL_LOCATION_ID },
+                COL_WAREHOUSE_ROW + " = ? AND " + COL_WAREHOUSE_SHELF + " = ?",
+                new String[] {
+                        String.valueOf(warehouseRow),
+                        String.valueOf(warehouseShelf)
+                },
+                null,
+                null,
+                null
+        )) {
+            if (cursor.moveToFirst()) {
+                return cursor.getLong(
+                        cursor.getColumnIndexOrThrow(COL_LOCATION_ID)
+                );
+            }
+        }
+
+        // Add the warehouse location only when that row and shelf do not already exist.
+        ContentValues values = new ContentValues();
+        values.put(COL_WAREHOUSE_ROW, warehouseRow);
+        values.put(COL_WAREHOUSE_SHELF, warehouseShelf);
+
+        return db.insertOrThrow(TABLE_LOCATIONS, null, values);
+    }
+    public long createNormalizedInventoryItem(
+            String name,
+            String manufacturer,
+            String category,
+            String modelNumber,
+            String serialNumber,
+            String scuNumber,
+            int quantity,
+            int lowThreshold,
+            int warehouseRow,
+            int warehouseShelf,
+            String notes
+    ) {
+        // Stop the insert when any required inventory information is missing.
+        if (isBlank(name)
+                || isBlank(manufacturer)
+                || isBlank(category)
+                || isBlank(modelNumber)
+                || isBlank(serialNumber)
+                || isBlank(scuNumber)) {
+            return -1;
+        }
+
+        // Quantities and warehouse positions should never use negative or zero values.
+        if (quantity < 0
+                || lowThreshold < 0
+                || warehouseRow <= 0
+                || warehouseShelf <= 0) {
+            return -1;
+        }
+
+        SQLiteDatabase db = getWritableDatabase();
+        long newItemId = -1;
+
+        // The lookup records and inventory item all belong to the same operation.
+        // Using a transaction prevents a partial record if one of the inserts fails.
+        db.beginTransaction();
+
+        try {
+            long manufacturerId = getOrCreateManufacturerId(
+                    db,
+                    manufacturer.trim()
+            );
+
+            long categoryId = getOrCreateCategoryId(
+                    db,
+                    category.trim()
+            );
+
+            long locationId = getOrCreateLocationId(
+                    db,
+                    warehouseRow,
+                    warehouseShelf
+            );
+
+            ContentValues values = new ContentValues();
+            values.put(COL_MANUFACTURER_ID, manufacturerId);
+            values.put(COL_CATEGORY_ID, categoryId);
+            values.put(COL_LOCATION_ID, locationId);
+            values.put(COL_ITEM_NAME, name.trim());
+            values.put(COL_MODEL_NUMBER, modelNumber.trim());
+            values.put(COL_ITEM_SERIAL, serialNumber.trim());
+            values.put(COL_ITEM_SCU, scuNumber.trim());
+            values.put(COL_ITEM_QTY, quantity);
+            values.put(COL_ITEM_THRESHOLD, lowThreshold);
+
+            // Notes are optional, so store an empty value when nothing was entered.
+            values.put(
+                    COL_ITEM_NOTES,
+                    notes == null ? "" : notes.trim()
+            );
+
+            newItemId = db.insertOrThrow(
+                    TABLE_INVENTORY_ITEMS,
+                    null,
+                    values
+            );
+
+            // Only keep the lookup records and item when every step succeeded.
+            db.setTransactionSuccessful();
+        } catch (RuntimeException exception) {
+            // Leave the result as -1 so the screen can report that the item was not saved.
+            newItemId = -1;
+        } finally {
+            db.endTransaction();
+            db.close();
+        }
+
+        return newItemId;
     }
 
     // -------------------------
