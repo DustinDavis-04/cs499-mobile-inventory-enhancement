@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Single chat message row used by the RecyclerView -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="4dp">
+
+    <!-- Displays one message, supports clickable links -->
+    <TextView
+        android:id="@+id/messageTextView"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:background="#333333"
+        android:padding="8dp"
+        android:textColor="#FFFFFF"
+        android:textColorLink="#FF5252"
+        android:textSize="14sp"
+        android:linksClickable="true" />
+
+</LinearLayout>

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- App should still run on devices without telephony hardware -->
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
+
+    <!-- Needed only when the user allows SMS alerts -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.CS360_ProjectTwo_InventoryApp_DustinDavis">
+
+        <!-- App entry point, handles user login -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Account creation screen -->
+        <activity android:name=".CreateAccountActivity" />
+
+        <!-- Main inventory list -->
+        <activity android:name=".InventoryActivity" />
+
+        <!-- Item details screen -->
+        <activity
+            android:name=".DetailedInfoActivity"
+            android:exported="true">
+
+            <!-- Allows inventory alert links to open directly to this item -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <!-- Matches links like https://warehouse.app/item/{id} -->
+                <data
+                    android:scheme="https"
+                    android:host="warehouse.app"
+                    android:pathPrefix="/item/" />
+            </intent-filter>
+
+        </activity>
+
+        <!-- In app SMS style alert screen -->
+        <activity android:name=".SmsActivity" />
+
+    </application>
+
+</manifest>
