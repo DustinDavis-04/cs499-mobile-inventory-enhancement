@@ -24,7 +24,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Scroll area so the form works on small screens -->
+    <!-- Scroll area so the full form still works on smaller screens -->
     <ScrollView
         android:id="@+id/detailsScroll"
         android:layout_width="0dp"
@@ -57,12 +57,12 @@
                 android:id="@+id/itemNameEditText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Item name"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
                 android:backgroundTint="#7D55CC"
+                android:hint="Item name"
+                android:inputType="textCapWords"
                 android:paddingBottom="12dp"
-                android:inputType="textCapWords" />
+                android:textColor="#FFFFFF"
+                android:textColorHint="#888888" />
 
             <!-- Reorder amount -->
             <TextView
@@ -77,14 +77,14 @@
                 android:id="@+id/reorderValueEditText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:backgroundTint="#7D55CC"
                 android:hint="0"
                 android:inputType="number"
+                android:paddingBottom="12dp"
                 android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
-                android:backgroundTint="#7D55CC"
-                android:paddingBottom="12dp" />
+                android:textColorHint="#888888" />
 
-            <!-- Quantity is displayed here, it is updated on the inventory screen -->
+            <!-- Quantity is displayed here and updated from the inventory screen -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -101,7 +101,7 @@
                 android:text="0"
                 android:textColor="#FFFFFF" />
 
-            <!-- Manufacturer (this replaced the old "model" label) -->
+            <!-- Manufacturer is stored in its own lookup table -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -114,12 +114,52 @@
                 android:id="@+id/manufacturerEditText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Manufacturer"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
                 android:backgroundTint="#7D55CC"
+                android:hint="Manufacturer"
+                android:inputType="textCapWords"
                 android:paddingBottom="12dp"
-                android:inputType="textCapWords" />
+                android:textColor="#FFFFFF"
+                android:textColorHint="#888888" />
+
+            <!-- Category keeps similar tools grouped together -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="4dp"
+                android:text="Category"
+                android:textColor="#BBBBBB"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/categoryEditText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:backgroundTint="#7D55CC"
+                android:hint="Category"
+                android:inputType="textCapWords"
+                android:paddingBottom="12dp"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#888888" />
+
+            <!-- Model number is kept separate from the manufacturer -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="4dp"
+                android:text="Model number"
+                android:textColor="#BBBBBB"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/modelNumberEditText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:backgroundTint="#7D55CC"
+                android:hint="Model number"
+                android:inputType="text"
+                android:paddingBottom="12dp"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#888888" />
 
             <!-- Serial number -->
             <TextView
@@ -134,12 +174,12 @@
                 android:id="@+id/serialEditText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Serial number"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
                 android:backgroundTint="#7D55CC"
+                android:hint="Serial number"
+                android:inputType="text"
                 android:paddingBottom="12dp"
-                android:inputType="text" />
+                android:textColor="#FFFFFF"
+                android:textColorHint="#888888" />
 
             <!-- SCU number -->
             <TextView
@@ -154,32 +194,52 @@
                 android:id="@+id/scuEditText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="SCU number"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
                 android:backgroundTint="#7D55CC"
+                android:hint="SCU number"
+                android:inputType="text"
                 android:paddingBottom="12dp"
-                android:inputType="text" />
+                android:textColor="#FFFFFF"
+                android:textColorHint="#888888" />
 
-            <!-- Location is optional -->
+            <!-- Row and shelf are stored separately so the app can search and
+                 report on warehouse positions without parsing one text value. -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:paddingTop="4dp"
-                android:text="Location"
+                android:text="Warehouse row"
                 android:textColor="#BBBBBB"
                 android:textStyle="bold" />
 
             <EditText
-                android:id="@+id/locationEditText"
+                android:id="@+id/warehouseRowEditText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Not specified"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
                 android:backgroundTint="#7D55CC"
+                android:hint="Row number"
+                android:inputType="number"
                 android:paddingBottom="12dp"
-                android:inputType="textCapWords" />
+                android:textColor="#FFFFFF"
+                android:textColorHint="#888888" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="4dp"
+                android:text="Warehouse shelf"
+                android:textColor="#BBBBBB"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/warehouseShelfEditText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:backgroundTint="#7D55CC"
+                android:hint="Shelf number"
+                android:inputType="number"
+                android:paddingBottom="12dp"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#888888" />
 
             <!-- Notes are optional -->
             <TextView
@@ -194,43 +254,43 @@
                 android:id="@+id/notesEditText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="No additional notes for this item."
-                android:textColor="#FFFFFF"
-                android:textColorHint="#888888"
                 android:backgroundTint="#7D55CC"
-                android:minLines="3"
                 android:gravity="top"
+                android:hint="No additional notes for this item."
+                android:inputType="textMultiLine"
+                android:minLines="3"
                 android:paddingBottom="12dp"
-                android:inputType="textMultiLine" />
+                android:textColor="#FFFFFF"
+                android:textColorHint="#888888" />
 
         </LinearLayout>
     </ScrollView>
 
-    <!-- Edit and Save stay pinned above the nav bar -->
+    <!-- Edit and Save stay pinned above the navigation bar -->
     <LinearLayout
         android:id="@+id/actionRow"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:paddingStart="16dp"
-        android:paddingEnd="16dp"
         android:paddingTop="6dp"
+        android:paddingEnd="16dp"
         android:paddingBottom="10dp"
         app:layout_constraintBottom_toTopOf="@id/bottomNavBar"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <!-- Edit unlocks the fields in view mode -->
+        <!-- Edit unlocks the fields while viewing an existing item -->
         <Button
             android:id="@+id/editButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:background="#555555"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
             android:text="Edit"
             android:textAllCaps="false"
-            android:textColor="#FFFFFF"
-            android:background="#555555"
-            android:paddingLeft="16dp"
-            android:paddingRight="16dp" />
+            android:textColor="#FFFFFF" />
 
         <!-- Spacer pushes Save to the right -->
         <View
@@ -238,67 +298,67 @@
             android:layout_height="0dp"
             android:layout_weight="1" />
 
-        <!-- Save writes changes to SQLite (disabled until changes are made) -->
+        <!-- Save writes the item details to SQLite -->
         <Button
             android:id="@+id/saveButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:background="#7D55CC"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
             android:text="Save"
             android:textAllCaps="false"
-            android:textColor="#FFFFFF"
-            android:background="#7D55CC"
-            android:paddingLeft="16dp"
-            android:paddingRight="16dp" />
+            android:textColor="#FFFFFF" />
     </LinearLayout>
 
-    <!-- Bottom nav bar with back -->
+    <!-- Bottom navigation bar with back button -->
     <LinearLayout
         android:id="@+id/bottomNavBar"
         android:layout_width="0dp"
         android:layout_height="56dp"
-        android:orientation="horizontal"
         android:background="#333333"
-        android:paddingLeft="16dp"
-        android:paddingRight="16dp"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <!-- Back button -->
         <LinearLayout
             android:id="@+id/backContainer"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:gravity="center_horizontal|center_vertical"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp"
             android:clickable="true"
             android:focusable="true"
-            android:foreground="?attr/selectableItemBackgroundBorderless">
+            android:foreground="?attr/selectableItemBackgroundBorderless"
+            android:gravity="center_horizontal|center_vertical"
+            android:orientation="vertical"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp">
 
             <ImageView
                 android:id="@+id/backArrow"
                 android:layout_width="24dp"
                 android:layout_height="24dp"
+                android:contentDescription="Go back"
                 android:src="@android:drawable/ic_media_previous"
-                app:tint="#FFFFFF"
-                android:contentDescription="Go back" />
+                app:tint="#FFFFFF" />
 
             <TextView
                 android:id="@+id/backLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Back"
-                android:textSize="10sp"
-                android:textColor="#FFFFFF" />
+                android:textColor="#FFFFFF"
+                android:textSize="10sp" />
         </LinearLayout>
 
-        <!-- Spacer -->
+        <!-- Spacer keeps the back control aligned to the left -->
         <View
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1" />
+
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
