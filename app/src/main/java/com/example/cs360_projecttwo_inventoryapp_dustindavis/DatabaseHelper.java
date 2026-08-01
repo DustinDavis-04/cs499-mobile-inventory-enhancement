@@ -24,27 +24,21 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String COL_TITLE = "title";
     private static final String COL_EMAIL = "email";
 
-    // Inventory table
-    private static final String TABLE_INVENTORY = "inventory";
-
     // Normalized lookup tables
     private static final String TABLE_MANUFACTURERS = "manufacturers";
     private static final String TABLE_CATEGORIES = "categories";
     private static final String TABLE_LOCATIONS = "locations";
     private static final String TABLE_INVENTORY_ITEMS = "inventory_items";
 
-    // Existing inventory columns
+    // Inventory item table columns
     private static final String COL_ITEM_ID = "id";
     private static final String COL_ITEM_NAME = "item_name";
     private static final String COL_ITEM_QTY = "quantity";
     private static final String COL_ITEM_THRESHOLD = "low_threshold";
 
-    // Item detail fields used on the details screen
-    // Column name stays as "model" to avoid a schema migration in this class project
-    private static final String COL_ITEM_MODEL = "model";
+    // Additional inventory item detail columns
     private static final String COL_ITEM_SERIAL = "serial_number";
     private static final String COL_ITEM_SCU = "scu_number";
-    private static final String COL_ITEM_LOCATION = "location";
     private static final String COL_ITEM_NOTES = "notes";
 
     // Manufacturer table columns
@@ -92,20 +86,6 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                         COL_LAST_NAME + " TEXT, " +
                         COL_TITLE + " TEXT, " +
                         COL_EMAIL + " TEXT NOT NULL" +
-                        ");";
-
-        // Inventory table includes both list screen fields and details screen fields
-        String createInventoryTable =
-                "CREATE TABLE " + TABLE_INVENTORY + " (" +
-                        COL_ITEM_ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                        COL_ITEM_NAME + " TEXT NOT NULL, " +
-                        COL_ITEM_QTY + " INTEGER NOT NULL, " +
-                        COL_ITEM_THRESHOLD + " INTEGER NOT NULL, " +
-                        COL_ITEM_MODEL + " TEXT NOT NULL, " +
-                        COL_ITEM_SERIAL + " TEXT NOT NULL, " +
-                        COL_ITEM_SCU + " TEXT NOT NULL, " +
-                        COL_ITEM_LOCATION + " TEXT, " +
-                        COL_ITEM_NOTES + " TEXT" +
                         ");";
 
         // These lookup tables let us normalize the inventory database instead of
@@ -171,7 +151,6 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                         ");";
 
         db.execSQL(createUsersTable);
-        db.execSQL(createInventoryTable);
 
         // Create the normalized lookup tables that future inventory records will use.
         db.execSQL(createManufacturersTable);
@@ -191,10 +170,6 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         db.execSQL("DROP TABLE IF EXISTS " + TABLE_MANUFACTURERS);
         db.execSQL("DROP TABLE IF EXISTS " + TABLE_CATEGORIES);
         db.execSQL("DROP TABLE IF EXISTS " + TABLE_LOCATIONS);
-
-        // Keep the original tables in the upgrade process while the app is being
-        // moved over to the normalized database structure.
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_INVENTORY);
         db.execSQL("DROP TABLE IF EXISTS " + TABLE_USERS);
 
         // Recreate the database using the newest table definitions.
@@ -973,257 +948,6 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     }
 
     // -------------------------
-    // Inventory CRUD
-    // -------------------------
-
-    public long createInventoryItem(String name,
-                                    int quantity,
-                                    int lowThreshold,
-                                    String manufacturer,
-                                    String serialNumber,
-                                    String scuNumber,
-                                    String location,
-                                    String notes) {
-
-        // Required fields for inventory items
-        if (isBlank(name) || isBlank(manufacturer) || isBlank(serialNumber) || isBlank(scuNumber)) {
-            return -1;
-        }
-
-        // Keep numeric values from going negative
-        if (quantity < 0) {
-            quantity = 0;
-        }
-        if (lowThreshold < 0) {
-            lowThreshold = 0;
-        }
-
-        SQLiteDatabase db = getWritableDatabase();
-
-        ContentValues values = new ContentValues();
-        values.put(COL_ITEM_NAME, name.trim());
-        values.put(COL_ITEM_QTY, quantity);
-        values.put(COL_ITEM_THRESHOLD, lowThreshold);
-
-        // "model" column is used as manufacturer in the UI
-        values.put(COL_ITEM_MODEL, manufacturer.trim());
-
-        values.put(COL_ITEM_SERIAL, serialNumber.trim());
-        values.put(COL_ITEM_SCU, scuNumber.trim());
-
-        // Optional fields, store empty string when left blank
-        values.put(COL_ITEM_LOCATION, location == null ? "" : location.trim());
-        values.put(COL_ITEM_NOTES, notes == null ? "" : notes.trim());
-
-        long newId = db.insert(TABLE_INVENTORY, null, values);
-        db.close();
-
-        return newId;
-    }
-
-    public ArrayList<InventoryItem> getAllInventoryItems() {
-        ArrayList<InventoryItem> items = new ArrayList<>();
-
-        SQLiteDatabase db = getReadableDatabase();
-
-        // Sort by name so the list feels consistent for the user
-        Cursor cursor = db.query(
-                TABLE_INVENTORY,
-                null,
-                null,
-                null,
-                null,
-                null,
-                COL_ITEM_NAME + " COLLATE NOCASE ASC"
-        );
-
-        if (cursor != null) {
-            while (cursor.moveToNext()) {
-                items.add(readInventoryItemFromCursor(cursor));
-            }
-            cursor.close();
-        }
-
-        db.close();
-        return items;
-    }
-
-    public InventoryItem getInventoryItemById(int itemId) {
-
-        // Item IDs should always be positive
-        if (itemId <= 0) {
-            return null;
-        }
-
-        SQLiteDatabase db = getReadableDatabase();
-
-        Cursor cursor = db.query(
-                TABLE_INVENTORY,
-                null,
-                COL_ITEM_ID + " = ?",
-                new String[]{String.valueOf(itemId)},
-                null,
-                null,
-                null
-        );
-
-        InventoryItem item = null;
-
-        if (cursor != null && cursor.moveToFirst()) {
-            item = readInventoryItemFromCursor(cursor);
-        }
-
-        if (cursor != null) {
-            cursor.close();
-        }
-        db.close();
-
-        return item;
-    }
-
-    public boolean updateInventoryQuantity(int itemId, int newQuantity) {
-
-        // This is the only edit allowed from the inventory list screen
-        if (itemId <= 0) {
-            return false;
-        }
-
-        if (newQuantity < 0) {
-            newQuantity = 0;
-        }
-
-        SQLiteDatabase db = getWritableDatabase();
-
-        ContentValues values = new ContentValues();
-        values.put(COL_ITEM_QTY, newQuantity);
-
-        int rows = db.update(
-                TABLE_INVENTORY,
-                values,
-                COL_ITEM_ID + " = ?",
-                new String[]{String.valueOf(itemId)}
-        );
-
-        db.close();
-        return rows > 0;
-    }
-
-    public boolean updateInventoryDetails(int itemId,
-                                          String name,
-                                          int lowThreshold,
-                                          String manufacturer,
-                                          String serialNumber,
-                                          String scuNumber,
-                                          String location,
-                                          String notes) {
-
-        // Details screen edits should always have a valid item id
-        if (itemId <= 0) {
-            return false;
-        }
-
-        // Required fields for the details screen
-        if (isBlank(name) || isBlank(manufacturer) || isBlank(serialNumber) || isBlank(scuNumber)) {
-            return false;
-        }
-
-        if (lowThreshold < 0) {
-            lowThreshold = 0;
-        }
-
-        SQLiteDatabase db = getWritableDatabase();
-
-        ContentValues values = new ContentValues();
-        values.put(COL_ITEM_NAME, name.trim());
-        values.put(COL_ITEM_THRESHOLD, lowThreshold);
-
-        // "model" column is used as manufacturer in the UI
-        values.put(COL_ITEM_MODEL, manufacturer.trim());
-        values.put(COL_ITEM_SERIAL, serialNumber.trim());
-        values.put(COL_ITEM_SCU, scuNumber.trim());
-
-        values.put(COL_ITEM_LOCATION, location == null ? "" : location.trim());
-        values.put(COL_ITEM_NOTES, notes == null ? "" : notes.trim());
-
-        int rows = db.update(
-                TABLE_INVENTORY,
-                values,
-                COL_ITEM_ID + " = ?",
-                new String[]{String.valueOf(itemId)}
-        );
-
-        db.close();
-        return rows > 0;
-    }
-
-    public boolean deleteInventoryItem(int itemId) {
-
-        // Protect against accidental deletes with a bad id
-        if (itemId <= 0) {
-            return false;
-        }
-
-        SQLiteDatabase db = getWritableDatabase();
-
-        int rows = db.delete(
-                TABLE_INVENTORY,
-                COL_ITEM_ID + " = ?",
-                new String[]{String.valueOf(itemId)}
-        );
-
-        db.close();
-        return rows > 0;
-    }
-
-    public ArrayList<InventoryItem> getLowInventoryItems() {
-        ArrayList<InventoryItem> items = new ArrayList<>();
-
-        SQLiteDatabase db = getReadableDatabase();
-
-        // Low inventory means quantity is at or below the reorder threshold
-        String selection = COL_ITEM_QTY + " <= " + COL_ITEM_THRESHOLD;
-
-        Cursor cursor = db.query(
-                TABLE_INVENTORY,
-                null,
-                selection,
-                null,
-                null,
-                null,
-                COL_ITEM_NAME + " COLLATE NOCASE ASC"
-        );
-
-        if (cursor != null) {
-            while (cursor.moveToNext()) {
-                items.add(readInventoryItemFromCursor(cursor));
-            }
-            cursor.close();
-        }
-
-        db.close();
-        return items;
-    }
-
-    private InventoryItem readInventoryItemFromCursor(Cursor cursor) {
-
-        // Keep cursor parsing in one spot so every query stays consistent
-        int id = cursor.getInt(cursor.getColumnIndexOrThrow(COL_ITEM_ID));
-        String name = cursor.getString(cursor.getColumnIndexOrThrow(COL_ITEM_NAME));
-        int qty = cursor.getInt(cursor.getColumnIndexOrThrow(COL_ITEM_QTY));
-        int threshold = cursor.getInt(cursor.getColumnIndexOrThrow(COL_ITEM_THRESHOLD));
-
-        // Stored in the "model" column, shown as manufacturer in the app
-        String manufacturer = cursor.getString(cursor.getColumnIndexOrThrow(COL_ITEM_MODEL));
-
-        String serial = cursor.getString(cursor.getColumnIndexOrThrow(COL_ITEM_SERIAL));
-        String scu = cursor.getString(cursor.getColumnIndexOrThrow(COL_ITEM_SCU));
-        String location = cursor.getString(cursor.getColumnIndexOrThrow(COL_ITEM_LOCATION));
-        String notes = cursor.getString(cursor.getColumnIndexOrThrow(COL_ITEM_NOTES));
-
-        return new InventoryItem(id, name, qty, threshold, manufacturer, serial, scu, location, notes);
-    }
-
-    // -------------------------
     // Model object
     // -------------------------
 
@@ -1252,11 +976,6 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         public String notes;
         public boolean isActive;
-
-        // Keep these fields temporarily so the original screens continue working
-        // while they are being moved over to the normalized database.
-        public String manufacturer;
-        public String location;
 
         /**
          * This constructor supports inventory records returned from the new
@@ -1302,60 +1021,6 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
             this.notes = notes;
             this.isActive = isActive;
-
-            // Keep the old display fields populated until the Activities are updated.
-            this.manufacturer = manufacturerName;
-            this.location = formatWarehouseLocation(warehouseRow, warehouseShelf);
-        }
-
-        /**
-         * This constructor keeps the original inventory code working during the
-         * database migration. It can be removed after every screen uses the new schema.
-         */
-        public InventoryItem(
-                int id,
-                String name,
-                int quantity,
-                int lowThreshold,
-                String manufacturer,
-                String serialNumber,
-                String scuNumber,
-                String location,
-                String notes
-        ) {
-            this.id = id;
-            this.name = name;
-            this.quantity = quantity;
-            this.lowThreshold = lowThreshold;
-
-            this.manufacturer = manufacturer;
-            this.serialNumber = serialNumber;
-            this.scuNumber = scuNumber;
-            this.location = location;
-            this.notes = notes;
-
-            // These values are not available from the original flat inventory table.
-            this.manufacturerId = 0;
-            this.manufacturerName = manufacturer;
-            this.categoryId = 0;
-            this.categoryName = "";
-            this.locationId = 0;
-            this.warehouseRow = 0;
-            this.warehouseShelf = 0;
-            this.modelNumber = "";
-            this.isActive = true;
-        }
-
-        private static String formatWarehouseLocation(
-                int warehouseRow,
-                int warehouseShelf
-        ) {
-            // Return a blank value when the item does not have a valid warehouse spot.
-            if (warehouseRow <= 0 || warehouseShelf <= 0) {
-                return "";
-            }
-
-            return "Row " + warehouseRow + ", Shelf " + warehouseShelf;
         }
     }
 }
