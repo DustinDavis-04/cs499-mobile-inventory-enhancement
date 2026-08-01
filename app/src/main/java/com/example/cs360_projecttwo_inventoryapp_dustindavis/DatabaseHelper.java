@@ -200,13 +200,14 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         // Recreate the database using the newest table definitions.
         onCreate(db);
     }
+
     private long getOrCreateManufacturerId(SQLiteDatabase db, String manufacturerName) {
         // Look for an existing manufacturer before adding a new one.
         try (Cursor cursor = db.query(
                 TABLE_MANUFACTURERS,
-                new String[] { COL_MANUFACTURER_ID },
+                new String[]{COL_MANUFACTURER_ID},
                 COL_MANUFACTURER_NAME + " = ? COLLATE NOCASE",
-                new String[] { manufacturerName },
+                new String[]{manufacturerName},
                 null,
                 null,
                 null
@@ -224,13 +225,14 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         return db.insertOrThrow(TABLE_MANUFACTURERS, null, values);
     }
+
     private long getOrCreateCategoryId(SQLiteDatabase db, String categoryName) {
         // Look for an existing category before adding a new one.
         try (Cursor cursor = db.query(
                 TABLE_CATEGORIES,
-                new String[] { COL_CATEGORY_ID },
+                new String[]{COL_CATEGORY_ID},
                 COL_CATEGORY_NAME + " = ? COLLATE NOCASE",
-                new String[] { categoryName },
+                new String[]{categoryName},
                 null,
                 null,
                 null
@@ -248,6 +250,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         return db.insertOrThrow(TABLE_CATEGORIES, null, values);
     }
+
     private long getOrCreateLocationId(
             SQLiteDatabase db,
             int warehouseRow,
@@ -256,9 +259,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         // Look for the exact row and shelf combination before creating a new location.
         try (Cursor cursor = db.query(
                 TABLE_LOCATIONS,
-                new String[] { COL_LOCATION_ID },
+                new String[]{COL_LOCATION_ID},
                 COL_WAREHOUSE_ROW + " = ? AND " + COL_WAREHOUSE_SHELF + " = ?",
-                new String[] {
+                new String[]{
                         String.valueOf(warehouseRow),
                         String.valueOf(warehouseShelf)
                 },
@@ -280,6 +283,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         return db.insertOrThrow(TABLE_LOCATIONS, null, values);
     }
+
     public long createNormalizedInventoryItem(
             String name,
             String manufacturer,
@@ -420,11 +424,11 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         SQLiteDatabase db = getReadableDatabase();
 
         String selection = COL_USERNAME + " = ? AND " + COL_PASSWORD + " = ?";
-        String[] selectionArgs = { username.trim(), password.trim() };
+        String[] selectionArgs = {username.trim(), password.trim()};
 
         Cursor cursor = db.query(
                 TABLE_USERS,
-                new String[] { COL_USER_ID },
+                new String[]{COL_USER_ID},
                 selection,
                 selectionArgs,
                 null,
@@ -447,9 +451,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         Cursor cursor = db.query(
                 TABLE_USERS,
-                new String[] { COL_USER_ID },
+                new String[]{COL_USER_ID},
                 COL_USERNAME + " = ?",
-                new String[] { username.trim() },
+                new String[]{username.trim()},
                 null,
                 null,
                 null
@@ -558,7 +562,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 TABLE_INVENTORY,
                 null,
                 COL_ITEM_ID + " = ?",
-                new String[] { String.valueOf(itemId) },
+                new String[]{String.valueOf(itemId)},
                 null,
                 null,
                 null
@@ -598,7 +602,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 TABLE_INVENTORY,
                 values,
                 COL_ITEM_ID + " = ?",
-                new String[] { String.valueOf(itemId) }
+                new String[]{String.valueOf(itemId)}
         );
 
         db.close();
@@ -646,7 +650,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 TABLE_INVENTORY,
                 values,
                 COL_ITEM_ID + " = ?",
-                new String[] { String.valueOf(itemId) }
+                new String[]{String.valueOf(itemId)}
         );
 
         db.close();
@@ -665,7 +669,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         int rows = db.delete(
                 TABLE_INVENTORY,
                 COL_ITEM_ID + " = ?",
-                new String[] { String.valueOf(itemId) }
+                new String[]{String.valueOf(itemId)}
         );
 
         db.close();
@@ -727,34 +731,132 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     public static class InventoryItem {
 
         public int id;
+
+        // These IDs connect the item back to the normalized lookup tables.
+        public long manufacturerId;
+        public long categoryId;
+        public long locationId;
+
+        // These values are returned from the lookup tables for display in the app.
+        public String manufacturerName;
+        public String categoryName;
+        public int warehouseRow;
+        public int warehouseShelf;
+
         public String name;
+        public String modelNumber;
+        public String serialNumber;
+        public String scuNumber;
+
         public int quantity;
         public int lowThreshold;
 
-        public String manufacturer;
-        public String serialNumber;
-        public String scuNumber;
-        public String location;
         public String notes;
+        public boolean isActive;
 
-        public InventoryItem(int id,
-                             String name,
-                             int quantity,
-                             int lowThreshold,
-                             String manufacturer,
-                             String serialNumber,
-                             String scuNumber,
-                             String location,
-                             String notes) {
+        // Keep these fields temporarily so the original screens continue working
+        // while they are being moved over to the normalized database.
+        public String manufacturer;
+        public String location;
+
+        /**
+         * This constructor supports inventory records returned from the new
+         * normalized database structure.
+         */
+        public InventoryItem(
+                int id,
+                long manufacturerId,
+                String manufacturerName,
+                long categoryId,
+                String categoryName,
+                long locationId,
+                int warehouseRow,
+                int warehouseShelf,
+                String name,
+                String modelNumber,
+                String serialNumber,
+                String scuNumber,
+                int quantity,
+                int lowThreshold,
+                String notes,
+                boolean isActive
+        ) {
+            this.id = id;
+
+            this.manufacturerId = manufacturerId;
+            this.manufacturerName = manufacturerName;
+
+            this.categoryId = categoryId;
+            this.categoryName = categoryName;
+
+            this.locationId = locationId;
+            this.warehouseRow = warehouseRow;
+            this.warehouseShelf = warehouseShelf;
+
+            this.name = name;
+            this.modelNumber = modelNumber;
+            this.serialNumber = serialNumber;
+            this.scuNumber = scuNumber;
+
+            this.quantity = quantity;
+            this.lowThreshold = lowThreshold;
+
+            this.notes = notes;
+            this.isActive = isActive;
+
+            // Keep the old display fields populated until the Activities are updated.
+            this.manufacturer = manufacturerName;
+            this.location = formatWarehouseLocation(warehouseRow, warehouseShelf);
+        }
+
+        /**
+         * This constructor keeps the original inventory code working during the
+         * database migration. It can be removed after every screen uses the new schema.
+         */
+        public InventoryItem(
+                int id,
+                String name,
+                int quantity,
+                int lowThreshold,
+                String manufacturer,
+                String serialNumber,
+                String scuNumber,
+                String location,
+                String notes
+        ) {
             this.id = id;
             this.name = name;
             this.quantity = quantity;
             this.lowThreshold = lowThreshold;
+
             this.manufacturer = manufacturer;
             this.serialNumber = serialNumber;
             this.scuNumber = scuNumber;
             this.location = location;
             this.notes = notes;
+
+            // These values are not available from the original flat inventory table.
+            this.manufacturerId = 0;
+            this.manufacturerName = manufacturer;
+            this.categoryId = 0;
+            this.categoryName = "";
+            this.locationId = 0;
+            this.warehouseRow = 0;
+            this.warehouseShelf = 0;
+            this.modelNumber = "";
+            this.isActive = true;
+        }
+
+        private static String formatWarehouseLocation(
+                int warehouseRow,
+                int warehouseShelf
+        ) {
+            // Return a blank value when the item does not have a valid warehouse spot.
+            if (warehouseRow <= 0 || warehouseShelf <= 0) {
+                return "";
+            }
+
+            return "Row " + warehouseRow + ", Shelf " + warehouseShelf;
         }
     }
 }
