@@ -584,6 +584,36 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         return wasUpdated;
     }
+    public boolean updateNormalizedInventoryQuantity(
+            int itemId,
+            int newQuantity
+    ) {
+        // Do not update an inventory item without a valid ID.
+        if (itemId <= 0) {
+            return false;
+        }
+
+        // Inventory quantities should never be negative.
+        if (newQuantity < 0) {
+            return false;
+        }
+
+        SQLiteDatabase db = getWritableDatabase();
+
+        ContentValues values = new ContentValues();
+        values.put(COL_ITEM_QTY, newQuantity);
+
+        int rows = db.update(
+                TABLE_INVENTORY_ITEMS,
+                values,
+                COL_ITEM_ID + " = ?",
+                new String[] { String.valueOf(itemId) }
+        );
+
+        db.close();
+
+        return rows > 0;
+    }
     private InventoryItem readNormalizedInventoryItemFromCursor(Cursor cursor) {
         // Keep the normalized cursor parsing in one place so every join stays consistent.
         int id = cursor.getInt(
