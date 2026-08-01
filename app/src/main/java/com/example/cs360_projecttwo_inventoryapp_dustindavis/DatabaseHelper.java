@@ -718,6 +718,64 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         return items;
     }
+    public ArrayList<InventoryItem> getLowNormalizedInventoryItems() {
+        ArrayList<InventoryItem> items = new ArrayList<>();
+
+        SQLiteDatabase db = getReadableDatabase();
+
+        // Join the lookup tables so low inventory records include the complete
+        // manufacturer, category, and warehouse location information.
+        String query =
+                "SELECT " +
+                        "i." + COL_ITEM_ID + ", " +
+                        "i." + COL_MANUFACTURER_ID + ", " +
+                        "m." + COL_MANUFACTURER_NAME + ", " +
+                        "i." + COL_CATEGORY_ID + ", " +
+                        "c." + COL_CATEGORY_NAME + ", " +
+                        "i." + COL_LOCATION_ID + ", " +
+                        "l." + COL_WAREHOUSE_ROW + ", " +
+                        "l." + COL_WAREHOUSE_SHELF + ", " +
+                        "i." + COL_ITEM_NAME + ", " +
+                        "i." + COL_MODEL_NUMBER + ", " +
+                        "i." + COL_ITEM_SERIAL + ", " +
+                        "i." + COL_ITEM_SCU + ", " +
+                        "i." + COL_ITEM_QTY + ", " +
+                        "i." + COL_ITEM_THRESHOLD + ", " +
+                        "i." + COL_ITEM_NOTES + ", " +
+                        "i." + COL_ITEM_ACTIVE + " " +
+
+                        "FROM " + TABLE_INVENTORY_ITEMS + " i " +
+
+                        "INNER JOIN " + TABLE_MANUFACTURERS + " m ON " +
+                        "i." + COL_MANUFACTURER_ID + " = " +
+                        "m." + COL_MANUFACTURER_ID + " " +
+
+                        "INNER JOIN " + TABLE_CATEGORIES + " c ON " +
+                        "i." + COL_CATEGORY_ID + " = " +
+                        "c." + COL_CATEGORY_ID + " " +
+
+                        "LEFT JOIN " + TABLE_LOCATIONS + " l ON " +
+                        "i." + COL_LOCATION_ID + " = " +
+                        "l." + COL_LOCATION_ID + " " +
+
+                        // Only show active items that are at or below their reorder threshold.
+                        "WHERE i." + COL_ITEM_ACTIVE + " = 1 AND " +
+                        "i." + COL_ITEM_QTY + " <= i." + COL_ITEM_THRESHOLD + " " +
+
+                        // Sort by quantity first so the items needing attention appear first.
+                        "ORDER BY i." + COL_ITEM_QTY + " ASC, " +
+                        "i." + COL_ITEM_NAME + " COLLATE NOCASE ASC";
+
+        try (Cursor cursor = db.rawQuery(query, null)) {
+            while (cursor.moveToNext()) {
+                items.add(readNormalizedInventoryItemFromCursor(cursor));
+            }
+        } finally {
+            db.close();
+        }
+
+        return items;
+    }
     private InventoryItem readNormalizedInventoryItemFromCursor(Cursor cursor) {
         // Keep the normalized cursor parsing in one place so every join stays consistent.
         int id = cursor.getInt(
