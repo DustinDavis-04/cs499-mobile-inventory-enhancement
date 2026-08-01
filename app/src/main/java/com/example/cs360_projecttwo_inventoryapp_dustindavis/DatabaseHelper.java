@@ -428,6 +428,65 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         return items;
     }
+    public InventoryItem getNormalizedInventoryItemById(int itemId) {
+        // Item IDs should always be positive before we query the database.
+        if (itemId <= 0) {
+            return null;
+        }
+
+        SQLiteDatabase db = getReadableDatabase();
+
+        // Join the lookup tables so the details screen gets the full item record.
+        String query =
+                "SELECT " +
+                        "i." + COL_ITEM_ID + ", " +
+                        "i." + COL_MANUFACTURER_ID + ", " +
+                        "m." + COL_MANUFACTURER_NAME + ", " +
+                        "i." + COL_CATEGORY_ID + ", " +
+                        "c." + COL_CATEGORY_NAME + ", " +
+                        "i." + COL_LOCATION_ID + ", " +
+                        "l." + COL_WAREHOUSE_ROW + ", " +
+                        "l." + COL_WAREHOUSE_SHELF + ", " +
+                        "i." + COL_ITEM_NAME + ", " +
+                        "i." + COL_MODEL_NUMBER + ", " +
+                        "i." + COL_ITEM_SERIAL + ", " +
+                        "i." + COL_ITEM_SCU + ", " +
+                        "i." + COL_ITEM_QTY + ", " +
+                        "i." + COL_ITEM_THRESHOLD + ", " +
+                        "i." + COL_ITEM_NOTES + ", " +
+                        "i." + COL_ITEM_ACTIVE + " " +
+
+                        "FROM " + TABLE_INVENTORY_ITEMS + " i " +
+
+                        "INNER JOIN " + TABLE_MANUFACTURERS + " m ON " +
+                        "i." + COL_MANUFACTURER_ID + " = " +
+                        "m." + COL_MANUFACTURER_ID + " " +
+
+                        "INNER JOIN " + TABLE_CATEGORIES + " c ON " +
+                        "i." + COL_CATEGORY_ID + " = " +
+                        "c." + COL_CATEGORY_ID + " " +
+
+                        "LEFT JOIN " + TABLE_LOCATIONS + " l ON " +
+                        "i." + COL_LOCATION_ID + " = " +
+                        "l." + COL_LOCATION_ID + " " +
+
+                        "WHERE i." + COL_ITEM_ID + " = ?";
+
+        InventoryItem item = null;
+
+        try (Cursor cursor = db.rawQuery(
+                query,
+                new String[] { String.valueOf(itemId) }
+        )) {
+            if (cursor.moveToFirst()) {
+                item = readNormalizedInventoryItemFromCursor(cursor);
+            }
+        } finally {
+            db.close();
+        }
+
+        return item;
+    }
     private InventoryItem readNormalizedInventoryItemFromCursor(Cursor cursor) {
         // Keep the normalized cursor parsing in one place so every join stays consistent.
         int id = cursor.getInt(
