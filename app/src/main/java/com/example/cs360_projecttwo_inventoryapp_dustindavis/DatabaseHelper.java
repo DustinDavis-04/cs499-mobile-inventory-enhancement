@@ -12,7 +12,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     // Basic database settings
     private static final String DATABASE_NAME = "inventory_app.db";
-    private static final int DATABASE_VERSION = 4;
+    private static final int DATABASE_VERSION = 5;
 
     // Users table (login plus optional profile info)
     private static final String TABLE_USERS = "users";
@@ -26,6 +26,14 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     // Inventory table
     private static final String TABLE_INVENTORY = "inventory";
+
+    // Normalized lookup tables
+    private static final String TABLE_MANUFACTURERS = "manufacturers";
+    private static final String TABLE_CATEGORIES = "categories";
+    private static final String TABLE_LOCATIONS = "locations";
+    private static final String TABLE_INVENTORY_ITEMS = "inventory_items";
+
+    // Existing inventory columns
     private static final String COL_ITEM_ID = "id";
     private static final String COL_ITEM_NAME = "item_name";
     private static final String COL_ITEM_QTY = "quantity";
@@ -38,6 +46,22 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String COL_ITEM_SCU = "scu_number";
     private static final String COL_ITEM_LOCATION = "location";
     private static final String COL_ITEM_NOTES = "notes";
+
+    // Manufacturer table columns
+    private static final String COL_MANUFACTURER_ID = "manufacturer_id";
+    private static final String COL_MANUFACTURER_NAME = "manufacturer_name";
+
+    // Category location columns
+    private static final String COL_CATEGORY_ID = "category_id";
+    private static final String COL_CATEGORY_NAME = "category_name";
+
+    // Warehouse location table columns
+    private static final String COL_LOCATION_ID = "location_id";
+    private static final String COL_WAREHOUSE_ROW = "warehouse_row";
+    private static final String COL_WAREHOUSE_SHELF = "warehouse_shelf";
+
+    // Additional normalized inventory item columns
+    private static final String COL_ITEM_ACTIVE = "is_active";
 
     public DatabaseHelper(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
@@ -74,17 +98,58 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                         COL_ITEM_NOTES + " TEXT" +
                         ");";
 
+        // These lookup tables let us normalize the inventory database instead of
+        // storing the same manufacturer, category, and location information over
+        // and over again with every inventory item.
+
+        String createManufacturersTable =
+                "CREATE TABLE " + TABLE_MANUFACTURERS + " (" +
+                        COL_MANUFACTURER_ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                        COL_MANUFACTURER_NAME + " TEXT NOT NULL UNIQUE" +
+                        ");";
+
+        String createCategoriesTable =
+                "CREATE TABLE " + TABLE_CATEGORIES + " (" +
+                        COL_CATEGORY_ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                        COL_CATEGORY_NAME + " TEXT NOT NULL UNIQUE" +
+                        ");";
+
+        // Store warehouse locations one time and let inventory items reference them.
+        // This keeps the database cleaner and makes locations easier to manage later.
+        String createLocationsTable =
+                "CREATE TABLE " + TABLE_LOCATIONS + " (" +
+                        COL_LOCATION_ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                        COL_WAREHOUSE_ROW + " INTEGER NOT NULL, " +
+                        COL_WAREHOUSE_SHELF + " INTEGER NOT NULL" +
+                        ");";
+
         db.execSQL(createUsersTable);
         db.execSQL(createInventoryTable);
+
+        // Create the normalized lookup tables that future inventory records will use.
+        db.execSQL(createManufacturersTable);
+        db.execSQL(createCategoriesTable);
+        db.execSQL(createLocationsTable);
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
 
-        // Simple upgrade plan for this class project
-        // This drops tables and recreates them, so existing data will be lost on version bumps
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_USERS);
+        // Drop the inventory item table first because it will eventually depend on
+        // the manufacturer, category, and location tables through foreign keys.
+        db.execSQL("DROP TABLE IF EXISTS " + TABLE_INVENTORY_ITEMS);
+
+        // Remove the normalized lookup tables before rebuilding the database.
+        db.execSQL("DROP TABLE IF EXISTS " + TABLE_MANUFACTURERS);
+        db.execSQL("DROP TABLE IF EXISTS " + TABLE_CATEGORIES);
+        db.execSQL("DROP TABLE IF EXISTS " + TABLE_LOCATIONS);
+
+        // Keep the original tables in the upgrade process while the app is being
+        // moved over to the normalized database structure.
         db.execSQL("DROP TABLE IF EXISTS " + TABLE_INVENTORY);
+        db.execSQL("DROP TABLE IF EXISTS " + TABLE_USERS);
+
+        // Recreate the database using the newest table definitions.
         onCreate(db);
     }
 
