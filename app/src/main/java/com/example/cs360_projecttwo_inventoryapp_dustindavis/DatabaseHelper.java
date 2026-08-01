@@ -283,7 +283,6 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         return db.insertOrThrow(TABLE_LOCATIONS, null, values);
     }
-
     public long createNormalizedInventoryItem(
             String name,
             String manufacturer,
@@ -373,6 +372,158 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         }
 
         return newItemId;
+    }
+    public ArrayList<InventoryItem> getAllNormalizedInventoryItems() {
+        ArrayList<InventoryItem> items = new ArrayList<>();
+
+        SQLiteDatabase db = getReadableDatabase();
+
+        // Join the lookup tables so each item comes back with complete display values.
+        String query =
+                "SELECT " +
+                        "i." + COL_ITEM_ID + ", " +
+                        "i." + COL_MANUFACTURER_ID + ", " +
+                        "m." + COL_MANUFACTURER_NAME + ", " +
+                        "i." + COL_CATEGORY_ID + ", " +
+                        "c." + COL_CATEGORY_NAME + ", " +
+                        "i." + COL_LOCATION_ID + ", " +
+                        "l." + COL_WAREHOUSE_ROW + ", " +
+                        "l." + COL_WAREHOUSE_SHELF + ", " +
+                        "i." + COL_ITEM_NAME + ", " +
+                        "i." + COL_MODEL_NUMBER + ", " +
+                        "i." + COL_ITEM_SERIAL + ", " +
+                        "i." + COL_ITEM_SCU + ", " +
+                        "i." + COL_ITEM_QTY + ", " +
+                        "i." + COL_ITEM_THRESHOLD + ", " +
+                        "i." + COL_ITEM_NOTES + ", " +
+                        "i." + COL_ITEM_ACTIVE + " " +
+
+                        "FROM " + TABLE_INVENTORY_ITEMS + " i " +
+
+                        "INNER JOIN " + TABLE_MANUFACTURERS + " m ON " +
+                        "i." + COL_MANUFACTURER_ID + " = " +
+                        "m." + COL_MANUFACTURER_ID + " " +
+
+                        "INNER JOIN " + TABLE_CATEGORIES + " c ON " +
+                        "i." + COL_CATEGORY_ID + " = " +
+                        "c." + COL_CATEGORY_ID + " " +
+
+                        "LEFT JOIN " + TABLE_LOCATIONS + " l ON " +
+                        "i." + COL_LOCATION_ID + " = " +
+                        "l." + COL_LOCATION_ID + " " +
+
+                        // Only return active items for the normal inventory view.
+                        "WHERE i." + COL_ITEM_ACTIVE + " = 1 " +
+
+                        // Keep the list consistent by sorting item names without case sensitivity.
+                        "ORDER BY i." + COL_ITEM_NAME + " COLLATE NOCASE ASC";
+
+        try (Cursor cursor = db.rawQuery(query, null)) {
+            while (cursor.moveToNext()) {
+                items.add(readNormalizedInventoryItemFromCursor(cursor));
+            }
+        } finally {
+            db.close();
+        }
+
+        return items;
+    }
+    private InventoryItem readNormalizedInventoryItemFromCursor(Cursor cursor) {
+        // Keep the normalized cursor parsing in one place so every join stays consistent.
+        int id = cursor.getInt(
+                cursor.getColumnIndexOrThrow(COL_ITEM_ID)
+        );
+
+        long manufacturerId = cursor.getLong(
+                cursor.getColumnIndexOrThrow(COL_MANUFACTURER_ID)
+        );
+
+        String manufacturerName = cursor.getString(
+                cursor.getColumnIndexOrThrow(COL_MANUFACTURER_NAME)
+        );
+
+        long categoryId = cursor.getLong(
+                cursor.getColumnIndexOrThrow(COL_CATEGORY_ID)
+        );
+
+        String categoryName = cursor.getString(
+                cursor.getColumnIndexOrThrow(COL_CATEGORY_NAME)
+        );
+
+        long locationId = cursor.isNull(
+                cursor.getColumnIndexOrThrow(COL_LOCATION_ID)
+        )
+                ? 0
+                : cursor.getLong(
+                cursor.getColumnIndexOrThrow(COL_LOCATION_ID)
+        );
+
+        int warehouseRow = cursor.isNull(
+                cursor.getColumnIndexOrThrow(COL_WAREHOUSE_ROW)
+        )
+                ? 0
+                : cursor.getInt(
+                cursor.getColumnIndexOrThrow(COL_WAREHOUSE_ROW)
+        );
+
+        int warehouseShelf = cursor.isNull(
+                cursor.getColumnIndexOrThrow(COL_WAREHOUSE_SHELF)
+        )
+                ? 0
+                : cursor.getInt(
+                cursor.getColumnIndexOrThrow(COL_WAREHOUSE_SHELF)
+        );
+
+        String name = cursor.getString(
+                cursor.getColumnIndexOrThrow(COL_ITEM_NAME)
+        );
+
+        String modelNumber = cursor.getString(
+                cursor.getColumnIndexOrThrow(COL_MODEL_NUMBER)
+        );
+
+        String serialNumber = cursor.getString(
+                cursor.getColumnIndexOrThrow(COL_ITEM_SERIAL)
+        );
+
+        String scuNumber = cursor.getString(
+                cursor.getColumnIndexOrThrow(COL_ITEM_SCU)
+        );
+
+        int quantity = cursor.getInt(
+                cursor.getColumnIndexOrThrow(COL_ITEM_QTY)
+        );
+
+        int lowThreshold = cursor.getInt(
+                cursor.getColumnIndexOrThrow(COL_ITEM_THRESHOLD)
+        );
+
+        String notes = cursor.getString(
+                cursor.getColumnIndexOrThrow(COL_ITEM_NOTES)
+        );
+
+        boolean isActive = cursor.getInt(
+                cursor.getColumnIndexOrThrow(COL_ITEM_ACTIVE)
+        ) == 1;
+
+        return new InventoryItem(
+                id,
+                manufacturerId,
+                manufacturerName,
+                categoryId,
+                categoryName,
+                locationId,
+                warehouseRow,
+                warehouseShelf,
+                name,
+                modelNumber,
+                serialNumber,
+                scuNumber,
+                quantity,
+                lowThreshold,
+                notes,
+                isActive
+        );
     }
 
     // -------------------------
