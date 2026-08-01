@@ -487,6 +487,103 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         return item;
     }
+    public boolean updateNormalizedInventoryDetails(
+            int itemId,
+            String name,
+            String manufacturer,
+            String category,
+            String modelNumber,
+            String serialNumber,
+            String scuNumber,
+            int lowThreshold,
+            int warehouseRow,
+            int warehouseShelf,
+            String notes
+    ) {
+        // Do not run an update without a valid inventory item ID.
+        if (itemId <= 0) {
+            return false;
+        }
+
+        // These fields are required for a complete inventory record.
+        if (isBlank(name)
+                || isBlank(manufacturer)
+                || isBlank(category)
+                || isBlank(modelNumber)
+                || isBlank(serialNumber)
+                || isBlank(scuNumber)) {
+            return false;
+        }
+
+        // Prevent invalid threshold and warehouse position values.
+        if (lowThreshold < 0
+                || warehouseRow <= 0
+                || warehouseShelf <= 0) {
+            return false;
+        }
+
+        SQLiteDatabase db = getWritableDatabase();
+        boolean wasUpdated = false;
+
+        // The lookup records and inventory update need to succeed together.
+        // The transaction prevents the item from being left partly updated.
+        db.beginTransaction();
+
+        try {
+            long manufacturerId = getOrCreateManufacturerId(
+                    db,
+                    manufacturer.trim()
+            );
+
+            long categoryId = getOrCreateCategoryId(
+                    db,
+                    category.trim()
+            );
+
+            long locationId = getOrCreateLocationId(
+                    db,
+                    warehouseRow,
+                    warehouseShelf
+            );
+
+            ContentValues values = new ContentValues();
+            values.put(COL_MANUFACTURER_ID, manufacturerId);
+            values.put(COL_CATEGORY_ID, categoryId);
+            values.put(COL_LOCATION_ID, locationId);
+            values.put(COL_ITEM_NAME, name.trim());
+            values.put(COL_MODEL_NUMBER, modelNumber.trim());
+            values.put(COL_ITEM_SERIAL, serialNumber.trim());
+            values.put(COL_ITEM_SCU, scuNumber.trim());
+            values.put(COL_ITEM_THRESHOLD, lowThreshold);
+
+            // Notes are optional, so keep an empty value when nothing was entered.
+            values.put(
+                    COL_ITEM_NOTES,
+                    notes == null ? "" : notes.trim()
+            );
+
+            int rows = db.update(
+                    TABLE_INVENTORY_ITEMS,
+                    values,
+                    COL_ITEM_ID + " = ?",
+                    new String[] { String.valueOf(itemId) }
+            );
+
+            wasUpdated = rows > 0;
+
+            if (wasUpdated) {
+                db.setTransactionSuccessful();
+            }
+        } catch (RuntimeException exception) {
+            // Return false when a duplicate or another database error blocks the update.
+            wasUpdated = false;
+        } finally {
+            db.endTransaction();
+            db.close();
+        }
+
+        return wasUpdated;
+    }
     private InventoryItem readNormalizedInventoryItemFromCursor(Cursor cursor) {
         // Keep the normalized cursor parsing in one place so every join stays consistent.
         int id = cursor.getInt(
