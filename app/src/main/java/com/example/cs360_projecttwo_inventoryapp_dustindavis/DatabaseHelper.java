@@ -1,12 +1,20 @@
 package com.example.cs360_projecttwo_inventoryapp_dustindavis;
 
+import android.util.Base64;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.security.spec.InvalidKeySpecException;
 import java.util.ArrayList;
+import java.security.MessageDigest;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
+import java.nio.charset.StandardCharsets;
 
 public class DatabaseHelper extends SQLiteOpenHelper {
 
@@ -16,6 +24,25 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     private static final String DATABASE_NAME = "inventory_app.db";
     private static final int DATABASE_VERSION = 6;
+
+    // -------------------------
+    // Password security settings
+    // -------------------------
+
+    private static final String PASSWORD_ALGORITHM =
+            "PBKDF2WithHmacSHA256";
+
+    private static final int PASSWORD_ITERATIONS =
+            120000;
+
+    private static final int PASSWORD_KEY_LENGTH =
+            256;
+
+    private static final int PASSWORD_SALT_LENGTH =
+            16;
+
+    private static final String PASSWORD_SEPARATOR =
+            ":";
 
     // -------------------------
     // Users table
@@ -1440,6 +1467,178 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     }
 
     // -------------------------
+    // Password security helpers
+    // -------------------------
+
+    private String hashPassword(String password) {
+        if (isBlank(password)) {
+            return null;
+        }
+
+        // Each password gets its own random salt.
+        byte[] salt = new byte[PASSWORD_SALT_LENGTH];
+        new SecureRandom().nextBytes(salt);
+
+        byte[] hash = createPasswordHash(
+                password.toCharArray(),
+                salt,
+                PASSWORD_ITERATIONS
+        );
+
+        if (hash == null) {
+            return null;
+        }
+
+        String encodedSalt = Base64.encodeToString(
+                salt,
+                Base64.NO_WRAP
+        );
+
+        String encodedHash = Base64.encodeToString(
+                hash,
+                Base64.NO_WRAP
+        );
+
+        // Store the settings, salt, and hash together so login can verify it later.
+        return PASSWORD_ITERATIONS
+                + PASSWORD_SEPARATOR
+                + encodedSalt
+                + PASSWORD_SEPARATOR
+                + encodedHash;
+    }
+
+    private boolean verifyPassword(
+            String enteredPassword,
+            String storedPassword
+    ) {
+        if (isBlank(enteredPassword) || isBlank(storedPassword)) {
+            return false;
+        }
+
+        String[] parts = storedPassword.split(
+                PASSWORD_SEPARATOR
+        );
+
+        // Older accounts may still have a plaintext password.
+        if (parts.length != 3) {
+            return MessageDigest.isEqual(
+                    enteredPassword.getBytes(StandardCharsets.UTF_8),
+                    storedPassword.getBytes(StandardCharsets.UTF_8)
+            );
+        }
+
+        try {
+            int iterations = Integer.parseInt(parts[0]);
+
+            byte[] salt = Base64.decode(
+                    parts[1],
+                    Base64.NO_WRAP
+            );
+
+            byte[] savedHash = Base64.decode(
+                    parts[2],
+                    Base64.NO_WRAP
+            );
+
+            byte[] enteredHash = createPasswordHash(
+                    enteredPassword.toCharArray(),
+                    salt,
+                    iterations
+            );
+
+            return enteredHash != null
+                    && MessageDigest.isEqual(
+                    enteredHash,
+                    savedHash
+            );
+
+        } catch (
+                IllegalArgumentException exception
+        ) {
+            return false;
+        }
+    }
+
+    private byte[] createPasswordHash(
+            char[] password,
+            byte[] salt,
+            int iterations
+    ) {
+        PBEKeySpec keySpec = new PBEKeySpec(
+                password,
+                salt,
+                iterations,
+                PASSWORD_KEY_LENGTH
+        );
+
+        try {
+            SecretKeyFactory keyFactory =
+                    SecretKeyFactory.getInstance(
+                            PASSWORD_ALGORITHM
+                    );
+
+            return keyFactory.generateSecret(
+                    keySpec
+            ).getEncoded();
+
+        } catch (
+                NoSuchAlgorithmException
+                | InvalidKeySpecException exception
+        ) {
+            return null;
+
+        } finally {
+            // Clear the password copy when hashing is finished.
+            keySpec.clearPassword();
+        }
+    }
+
+    private boolean isHashedPassword(String storedPassword) {
+        if (storedPassword == null) {
+            return false;
+        }
+
+        String[] parts = storedPassword.split(
+                PASSWORD_SEPARATOR
+        );
+
+        return parts.length == 3;
+    }
+
+    private boolean replacePlaintextPassword(
+            int userId,
+            String password
+    ) {
+        String hashedPassword = hashPassword(password);
+
+        if (userId <= 0 || hashedPassword == null) {
+            return false;
+        }
+
+        SQLiteDatabase db = getWritableDatabase();
+
+        ContentValues values = new ContentValues();
+
+        values.put(
+                COL_PASSWORD,
+                hashedPassword
+        );
+
+        int rows = db.update(
+                TABLE_USERS,
+                values,
+                COL_USER_ID + " = ?",
+                new String[]{
+                        String.valueOf(userId)
+                }
+        );
+
+        db.close();
+
+        return rows > 0;
+    }
+
+    // -------------------------
     // User account and login helpers
     // -------------------------
 
@@ -1463,6 +1662,13 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             return false;
         }
 
+        // Store a salted password hash instead of the original password.
+        String hashedPassword = hashPassword(password);
+
+        if (hashedPassword == null) {
+            return false;
+        }
+
         SQLiteDatabase db = getWritableDatabase();
 
         ContentValues values = new ContentValues();
@@ -1474,7 +1680,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         values.put(
                 COL_PASSWORD,
-                password.trim()
+                hashedPassword
         );
 
         values.put(
@@ -1531,52 +1737,80 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         SQLiteDatabase db = getReadableDatabase();
 
-        String selection =
-                COL_USERNAME + " = ? AND " +
-                        COL_PASSWORD + " = ?";
-
-        String[] selectionArgs = {
-                username.trim(),
-                password.trim()
-        };
-
         UserSession session = null;
+        int userId = -1;
+        String savedUsername = null;
+        String storedPassword = null;
 
         try (Cursor cursor = db.query(
                 TABLE_USERS,
                 new String[]{
                         COL_USER_ID,
-                        COL_USERNAME
+                        COL_USERNAME,
+                        COL_PASSWORD
                 },
-                selection,
-                selectionArgs,
+                COL_USERNAME + " = ? COLLATE NOCASE",
+                new String[]{
+                        username.trim()
+                },
                 null,
                 null,
                 null
         )) {
             if (cursor.moveToFirst()) {
-                int userId = cursor.getInt(
+                userId = cursor.getInt(
                         cursor.getColumnIndexOrThrow(
                                 COL_USER_ID
                         )
                 );
 
-                String savedUsername = cursor.getString(
+                savedUsername = cursor.getString(
                         cursor.getColumnIndexOrThrow(
                                 COL_USERNAME
                         )
                 );
 
-                // Keep the ID and username together so the rest of the app
-                // knows exactly which user is currently signed in.
-                session = new UserSession(
-                        userId,
-                        savedUsername
+                storedPassword = cursor.getString(
+                        cursor.getColumnIndexOrThrow(
+                                COL_PASSWORD
+                        )
                 );
             }
         } finally {
             db.close();
         }
+
+        // Stop when the username does not exist.
+        if (userId <= 0
+                || savedUsername == null
+                || storedPassword == null) {
+            return null;
+        }
+
+        // Compare the entered password with either the saved hash
+        // or an older plaintext password.
+        boolean passwordMatches = verifyPassword(
+                password,
+                storedPassword
+        );
+
+        if (!passwordMatches) {
+            return null;
+        }
+
+        // Older accounts are upgraded to hashed storage after a valid login.
+        if (!isHashedPassword(storedPassword)) {
+            replacePlaintextPassword(
+                    userId,
+                    password
+            );
+        }
+
+        // Keep the ID and username together for the active session.
+        session = new UserSession(
+                userId,
+                savedUsername
+        );
 
         return session;
     }
@@ -1589,7 +1823,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         try (Cursor cursor = db.query(
                 TABLE_USERS,
                 new String[]{COL_USER_ID},
-                COL_USERNAME + " = ?",
+                COL_USERNAME + " = ? COLLATE NOCASE",
                 new String[]{username.trim()},
                 null,
                 null,
