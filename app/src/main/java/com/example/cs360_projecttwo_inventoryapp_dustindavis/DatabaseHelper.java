@@ -7,6 +7,9 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
@@ -18,12 +21,18 @@ import java.nio.charset.StandardCharsets;
 
 public class DatabaseHelper extends SQLiteOpenHelper {
 
+    // Used to read the bundled inventory CSV from the assets folder
+    private final Context appContext;
+
     // -------------------------
     // Database settings
     // -------------------------
 
     private static final String DATABASE_NAME = "inventory_app.db";
     private static final int DATABASE_VERSION = 6;
+
+    // Bundled inventory used only when the database is first created.
+    private static final String INITIAL_INVENTORY_FILE = "mobile_inventory_construction_tools.csv";
 
     // -------------------------
     // Password security settings
@@ -120,7 +129,15 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     public static final String TRANSACTION_REACTIVATE = "REACTIVATE";
 
     public DatabaseHelper(Context context) {
-        super(context, DATABASE_NAME, null, DATABASE_VERSION);
+        super(
+                context.getApplicationContext(),
+                DATABASE_NAME,
+                null,
+                DATABASE_VERSION
+        );
+
+        // Save the application context so the CSV importer can read assets.
+        appContext = context.getApplicationContext();
     }
 
     @Override
@@ -248,6 +265,10 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         // The history table depends on both users and inventory items,
         // so it is created after those tables are ready.
         createInventoryTransactionsTable(db);
+
+        // Add the bundled warehouse inventory only when the database
+        // is created for the first time.
+        loadInitialInventoryFromCsv(db);
     }
 
     private void createInventoryTransactionsTable(SQLiteDatabase db) {
@@ -296,6 +317,246 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                         ");";
 
         db.execSQL(createTransactionsTable);
+    }
+
+    // Read one CSV row while keeping quoted commas inside the correct field.
+    private ArrayList<String> parseCsvLine(String line) {
+        ArrayList<String> values = new ArrayList<>();
+
+        StringBuilder currentValue = new StringBuilder();
+        boolean insideQuotes = false;
+
+        for (int index = 0; index < line.length(); index++) {
+            char currentCharacter = line.charAt(index);
+
+            if (currentCharacter == '"') {
+                // Two quotation marks inside a quoted field represent one quote.
+                if (insideQuotes
+                        && index + 1 < line.length()
+                        && line.charAt(index + 1) == '"') {
+
+                    currentValue.append('"');
+                    index++;
+                } else {
+                    insideQuotes = !insideQuotes;
+                }
+            } else if (currentCharacter == ',' && !insideQuotes) {
+                values.add(
+                        currentValue.toString().trim()
+                );
+
+                currentValue.setLength(0);
+            } else {
+                currentValue.append(currentCharacter);
+            }
+        }
+
+        // Add the final column after the loop reaches the end of the line.
+        values.add(
+                currentValue.toString().trim()
+        );
+
+        return values;
+    }
+
+    // Load the bundled CSV only while the database is being created.
+    private void loadInitialInventoryFromCsv(SQLiteDatabase db) {
+        try (
+                BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(
+                                appContext.getAssets().open(
+                                        INITIAL_INVENTORY_FILE
+                                ),
+                                StandardCharsets.UTF_8
+                        )
+                )
+        ) {
+            // The first row contains column names, so it is not inventory data.
+            String line = reader.readLine();
+
+            while ((line = reader.readLine()) != null) {
+                if (line.trim().isEmpty()) {
+                    continue;
+                }
+
+                ArrayList<String> columns =
+                        parseCsvLine(line);
+
+                // The bundled CSV contains 12 columns.
+                if (columns.size() != 12) {
+                    throw new IllegalStateException(
+                            "The inventory CSV contains an invalid row."
+                    );
+                }
+
+                String itemName = columns.get(0);
+                String category = columns.get(1);
+                String manufacturer = columns.get(2);
+                String modelNumber = columns.get(3);
+                String serialNumber = columns.get(4);
+                String scuNumber = columns.get(5);
+
+                int quantity = Integer.parseInt(
+                        columns.get(6)
+                );
+
+                int lowThreshold = Integer.parseInt(
+                        columns.get(7)
+                );
+
+                int[] warehouseLocation =
+                        parseWarehouseLocation(
+                                columns.get(8)
+                        );
+
+                String notes = columns.get(9);
+
+                boolean isActive = Boolean.parseBoolean(
+                        columns.get(10)
+                );
+
+                // The source URL is kept in the CSV for documentation,
+                // but it is not needed in the application database.
+                long manufacturerId =
+                        getOrCreateManufacturerId(
+                                db,
+                                manufacturer
+                        );
+
+                long categoryId =
+                        getOrCreateCategoryId(
+                                db,
+                                category
+                        );
+
+                long locationId =
+                        getOrCreateLocationId(
+                                db,
+                                warehouseLocation[0],
+                                warehouseLocation[1]
+                        );
+
+                ContentValues values =
+                        new ContentValues();
+
+                values.put(
+                        COL_MANUFACTURER_ID,
+                        manufacturerId
+                );
+
+                values.put(
+                        COL_CATEGORY_ID,
+                        categoryId
+                );
+
+                values.put(
+                        COL_LOCATION_ID,
+                        locationId
+                );
+
+                values.put(
+                        COL_ITEM_NAME,
+                        itemName
+                );
+
+                values.put(
+                        COL_MODEL_NUMBER,
+                        modelNumber
+                );
+
+                values.put(
+                        COL_ITEM_SERIAL,
+                        serialNumber
+                );
+
+                values.put(
+                        COL_ITEM_SCU,
+                        scuNumber
+                );
+
+                values.put(
+                        COL_ITEM_QTY,
+                        quantity
+                );
+
+                values.put(
+                        COL_ITEM_THRESHOLD,
+                        lowThreshold
+                );
+
+                values.put(
+                        COL_ITEM_NOTES,
+                        notes
+                );
+
+                values.put(
+                        COL_ITEM_ACTIVE,
+                        isActive ? 1 : 0
+                );
+
+                db.insertOrThrow(
+                        TABLE_INVENTORY_ITEMS,
+                        null,
+                        values
+                );
+            }
+        } catch (
+                IOException
+                | NumberFormatException exception
+        ) {
+            throw new IllegalStateException(
+                    "The starting inventory could not be loaded.",
+                    exception
+            );
+        }
+    }
+
+    // Convert values like "Row 5, Shelf 3" into separate row and shelf numbers.
+    private int[] parseWarehouseLocation(String locationText) {
+        if (isBlank(locationText)) {
+            throw new IllegalArgumentException(
+                    "Warehouse location is missing."
+            );
+        }
+
+        String cleanedLocation =
+                locationText.trim();
+
+        String[] parts =
+                cleanedLocation.split(",");
+
+        if (parts.length != 2) {
+            throw new IllegalArgumentException(
+                    "Warehouse location format is invalid."
+            );
+        }
+
+        String rowText =
+                parts[0]
+                        .replace("Row", "")
+                        .trim();
+
+        String shelfText =
+                parts[1]
+                        .replace("Shelf", "")
+                        .trim();
+
+        int warehouseRow =
+                Integer.parseInt(rowText);
+
+        int warehouseShelf =
+                Integer.parseInt(shelfText);
+
+        if (warehouseRow <= 0 || warehouseShelf <= 0) {
+            throw new IllegalArgumentException(
+                    "Warehouse row and shelf must be greater than zero."
+            );
+        }
+
+        return new int[]{
+                warehouseRow,
+                warehouseShelf
+        };
     }
 
     @Override
