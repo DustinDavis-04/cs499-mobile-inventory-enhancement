@@ -10,12 +10,19 @@ import java.util.ArrayList;
 
 public class DatabaseHelper extends SQLiteOpenHelper {
 
-    // Basic database settings
-    private static final String DATABASE_NAME = "inventory_app.db";
-    private static final int DATABASE_VERSION = 5;
+    // -------------------------
+    // Database settings
+    // -------------------------
 
-    // Users table (login plus optional profile info)
+    private static final String DATABASE_NAME = "inventory_app.db";
+    private static final int DATABASE_VERSION = 6;
+
+    // -------------------------
+    // Users table
+    // -------------------------
+
     private static final String TABLE_USERS = "users";
+
     private static final String COL_USER_ID = "id";
     private static final String COL_USERNAME = "username";
     private static final String COL_PASSWORD = "password";
@@ -24,39 +31,66 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String COL_TITLE = "title";
     private static final String COL_EMAIL = "email";
 
-    // Normalized lookup tables
+    // -------------------------
+    // Normalized inventory tables
+    // -------------------------
+
     private static final String TABLE_MANUFACTURERS = "manufacturers";
     private static final String TABLE_CATEGORIES = "categories";
     private static final String TABLE_LOCATIONS = "locations";
     private static final String TABLE_INVENTORY_ITEMS = "inventory_items";
 
-    // Inventory item table columns
+    // Inventory item columns
     private static final String COL_ITEM_ID = "id";
     private static final String COL_ITEM_NAME = "item_name";
     private static final String COL_ITEM_QTY = "quantity";
     private static final String COL_ITEM_THRESHOLD = "low_threshold";
-
-    // Additional inventory item detail columns
     private static final String COL_ITEM_SERIAL = "serial_number";
     private static final String COL_ITEM_SCU = "scu_number";
     private static final String COL_ITEM_NOTES = "notes";
+    private static final String COL_ITEM_ACTIVE = "is_active";
+    private static final String COL_MODEL_NUMBER = "model_number";
 
-    // Manufacturer table columns
+    // Manufacturer columns
     private static final String COL_MANUFACTURER_ID = "manufacturer_id";
     private static final String COL_MANUFACTURER_NAME = "manufacturer_name";
 
-    // Category table columns
+    // Category columns
     private static final String COL_CATEGORY_ID = "category_id";
     private static final String COL_CATEGORY_NAME = "category_name";
 
-    // Warehouse location table columns
+    // Warehouse location columns
     private static final String COL_LOCATION_ID = "location_id";
     private static final String COL_WAREHOUSE_ROW = "warehouse_row";
     private static final String COL_WAREHOUSE_SHELF = "warehouse_shelf";
 
-    // Additional normalized inventory item columns
-    private static final String COL_ITEM_ACTIVE = "is_active";
-    private static final String COL_MODEL_NUMBER = "model_number";
+    // -------------------------
+    // Inventory transaction table
+    // -------------------------
+
+    private static final String TABLE_INVENTORY_TRANSACTIONS =
+            "inventory_transactions";
+
+    private static final String COL_TRANSACTION_ID = "transaction_id";
+
+    // The users and inventory tables both use "id" as their primary key.
+    // These names keep the two foreign keys separate in the history table.
+    private static final String COL_TRANSACTION_ITEM_ID = "item_id";
+    private static final String COL_TRANSACTION_USER_ID = "user_id";
+
+    private static final String COL_TRANSACTION_TYPE = "transaction_type";
+    private static final String COL_OLD_QUANTITY = "old_quantity";
+    private static final String COL_NEW_QUANTITY = "new_quantity";
+    private static final String COL_TRANSACTION_NOTE = "transaction_note";
+    private static final String COL_TRANSACTION_DATE = "transaction_date";
+
+    // Keep transaction types consistent so the database does not end up
+    // with slightly different labels for the same kind of action.
+    public static final String TRANSACTION_CREATE = "CREATE";
+    public static final String TRANSACTION_UPDATE = "UPDATE";
+    public static final String TRANSACTION_QUANTITY = "QUANTITY";
+    public static final String TRANSACTION_DEACTIVATE = "DEACTIVATE";
+    public static final String TRANSACTION_REACTIVATE = "REACTIVATE";
 
     public DatabaseHelper(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
@@ -66,118 +100,272 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     public void onConfigure(SQLiteDatabase db) {
         super.onConfigure(db);
 
-        // Turn on foreign key checks so inventory items cannot reference
-        // manufacturers, categories, or locations that do not exist.
+        // Turn on foreign key checks so records cannot point to data
+        // that does not exist in the related tables.
         db.setForeignKeyConstraintsEnabled(true);
     }
 
     @Override
     public void onCreate(SQLiteDatabase db) {
 
-        // Users table rules:
-        // Required: username, password, email
-        // Optional: first name, last name, title
         String createUsersTable =
                 "CREATE TABLE " + TABLE_USERS + " (" +
-                        COL_USER_ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                        COL_USERNAME + " TEXT NOT NULL UNIQUE, " +
-                        COL_PASSWORD + " TEXT NOT NULL, " +
-                        COL_FIRST_NAME + " TEXT, " +
-                        COL_LAST_NAME + " TEXT, " +
-                        COL_TITLE + " TEXT, " +
-                        COL_EMAIL + " TEXT NOT NULL" +
+                        COL_USER_ID +
+                        " INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                        COL_USERNAME +
+                        " TEXT NOT NULL UNIQUE, " +
+                        COL_PASSWORD +
+                        " TEXT NOT NULL, " +
+                        COL_FIRST_NAME +
+                        " TEXT, " +
+                        COL_LAST_NAME +
+                        " TEXT, " +
+                        COL_TITLE +
+                        " TEXT, " +
+                        COL_EMAIL +
+                        " TEXT NOT NULL" +
                         ");";
 
-        // These lookup tables let us normalize the inventory database instead of
-        // storing the same manufacturer, category, and location information over
-        // and over again with every inventory item.
-
+        // Manufacturers are stored once and reused by inventory items.
         String createManufacturersTable =
                 "CREATE TABLE " + TABLE_MANUFACTURERS + " (" +
-                        COL_MANUFACTURER_ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                        COL_MANUFACTURER_ID +
+                        " INTEGER PRIMARY KEY AUTOINCREMENT, " +
                         COL_MANUFACTURER_NAME +
                         " TEXT NOT NULL UNIQUE COLLATE NOCASE" +
                         ");";
 
+        // Categories are stored once and reused by inventory items.
         String createCategoriesTable =
                 "CREATE TABLE " + TABLE_CATEGORIES + " (" +
-                        COL_CATEGORY_ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                        COL_CATEGORY_ID +
+                        " INTEGER PRIMARY KEY AUTOINCREMENT, " +
                         COL_CATEGORY_NAME +
                         " TEXT NOT NULL UNIQUE COLLATE NOCASE" +
                         ");";
 
-        // Store warehouse locations one time and let inventory items reference them.
-        // This keeps the database cleaner and makes locations easier to manage later.
+        // Each warehouse row and shelf combination is stored one time.
         String createLocationsTable =
                 "CREATE TABLE " + TABLE_LOCATIONS + " (" +
-                        COL_LOCATION_ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                        COL_WAREHOUSE_ROW + " " +
-                        "INTEGER NOT NULL CHECK (" + COL_WAREHOUSE_ROW + " > 0), " +
-                        COL_WAREHOUSE_SHELF + " " +
-                        "INTEGER NOT NULL CHECK (" + COL_WAREHOUSE_SHELF + " > 0), " +
-                        "UNIQUE (" + COL_WAREHOUSE_ROW + ", " +
-                        COL_WAREHOUSE_SHELF + ")" +
+                        COL_LOCATION_ID +
+                        " INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                        COL_WAREHOUSE_ROW +
+                        " INTEGER NOT NULL CHECK (" +
+                        COL_WAREHOUSE_ROW + " > 0), " +
+                        COL_WAREHOUSE_SHELF +
+                        " INTEGER NOT NULL CHECK (" +
+                        COL_WAREHOUSE_SHELF + " > 0), " +
+                        "UNIQUE (" +
+                        COL_WAREHOUSE_ROW + ", " +
+                        COL_WAREHOUSE_SHELF +
+                        ")" +
                         ");";
 
-        // This is the normalized replacement for the original inventory table.
-        // Manufacturer, category, and warehouse location are connected through
-        // foreign keys instead of repeating the same text for every item.
+        // Inventory items connect to manufacturer, category, and location
+        // records instead of repeating those values in every row.
         String createInventoryItemsTable =
                 "CREATE TABLE " + TABLE_INVENTORY_ITEMS + " (" +
-                        COL_ITEM_ID + " INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                        COL_MANUFACTURER_ID + " INTEGER NOT NULL, " +
-                        COL_CATEGORY_ID + " INTEGER NOT NULL, " +
-                        COL_LOCATION_ID + " INTEGER, " +
-                        COL_ITEM_NAME + " TEXT NOT NULL, " +
-                        COL_MODEL_NUMBER + " TEXT NOT NULL, " +
-                        COL_ITEM_SERIAL + " TEXT NOT NULL UNIQUE, " +
-                        COL_ITEM_SCU + " TEXT NOT NULL UNIQUE, " +
-                        COL_ITEM_QTY + " INTEGER NOT NULL DEFAULT 0 " +
+                        COL_ITEM_ID +
+                        " INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                        COL_MANUFACTURER_ID +
+                        " INTEGER NOT NULL, " +
+                        COL_CATEGORY_ID +
+                        " INTEGER NOT NULL, " +
+                        COL_LOCATION_ID +
+                        " INTEGER, " +
+                        COL_ITEM_NAME +
+                        " TEXT NOT NULL, " +
+                        COL_MODEL_NUMBER +
+                        " TEXT NOT NULL, " +
+                        COL_ITEM_SERIAL +
+                        " TEXT NOT NULL UNIQUE, " +
+                        COL_ITEM_SCU +
+                        " TEXT NOT NULL UNIQUE, " +
+                        COL_ITEM_QTY +
+                        " INTEGER NOT NULL DEFAULT 0 " +
                         "CHECK (" + COL_ITEM_QTY + " >= 0), " +
-                        COL_ITEM_THRESHOLD + " INTEGER NOT NULL DEFAULT 0 " +
+                        COL_ITEM_THRESHOLD +
+                        " INTEGER NOT NULL DEFAULT 0 " +
                         "CHECK (" + COL_ITEM_THRESHOLD + " >= 0), " +
-                        COL_ITEM_NOTES + " TEXT, " +
-                        COL_ITEM_ACTIVE + " INTEGER NOT NULL DEFAULT 1 " +
+                        COL_ITEM_NOTES +
+                        " TEXT, " +
+                        COL_ITEM_ACTIVE +
+                        " INTEGER NOT NULL DEFAULT 1 " +
                         "CHECK (" + COL_ITEM_ACTIVE + " IN (0, 1)), " +
 
-                        "FOREIGN KEY (" + COL_MANUFACTURER_ID + ") REFERENCES " +
-                        TABLE_MANUFACTURERS + "(" + COL_MANUFACTURER_ID + "), " +
+                        "FOREIGN KEY (" +
+                        COL_MANUFACTURER_ID +
+                        ") REFERENCES " +
+                        TABLE_MANUFACTURERS +
+                        "(" + COL_MANUFACTURER_ID + "), " +
 
-                        "FOREIGN KEY (" + COL_CATEGORY_ID + ") REFERENCES " +
-                        TABLE_CATEGORIES + "(" + COL_CATEGORY_ID + "), " +
+                        "FOREIGN KEY (" +
+                        COL_CATEGORY_ID +
+                        ") REFERENCES " +
+                        TABLE_CATEGORIES +
+                        "(" + COL_CATEGORY_ID + "), " +
 
-                        "FOREIGN KEY (" + COL_LOCATION_ID + ") REFERENCES " +
-                        TABLE_LOCATIONS + "(" + COL_LOCATION_ID + ")" +
+                        "FOREIGN KEY (" +
+                        COL_LOCATION_ID +
+                        ") REFERENCES " +
+                        TABLE_LOCATIONS +
+                        "(" + COL_LOCATION_ID + ")" +
                         ");";
 
         db.execSQL(createUsersTable);
-
-        // Create the normalized lookup tables that future inventory records will use.
         db.execSQL(createManufacturersTable);
         db.execSQL(createCategoriesTable);
         db.execSQL(createLocationsTable);
         db.execSQL(createInventoryItemsTable);
+
+        // The history table depends on both users and inventory items,
+        // so it is created after those tables are ready.
+        createInventoryTransactionsTable(db);
+    }
+
+    private void createInventoryTransactionsTable(SQLiteDatabase db) {
+
+        // This table keeps a record of what changed, which user made
+        // the change, and when the change happened.
+        String createTransactionsTable =
+                "CREATE TABLE IF NOT EXISTS " +
+                        TABLE_INVENTORY_TRANSACTIONS + " (" +
+
+                        COL_TRANSACTION_ID +
+                        " INTEGER PRIMARY KEY AUTOINCREMENT, " +
+
+                        COL_TRANSACTION_ITEM_ID +
+                        " INTEGER NOT NULL, " +
+
+                        COL_TRANSACTION_USER_ID +
+                        " INTEGER NOT NULL, " +
+
+                        COL_TRANSACTION_TYPE +
+                        " TEXT NOT NULL, " +
+
+                        COL_OLD_QUANTITY +
+                        " INTEGER, " +
+
+                        COL_NEW_QUANTITY +
+                        " INTEGER, " +
+
+                        COL_TRANSACTION_NOTE +
+                        " TEXT, " +
+
+                        COL_TRANSACTION_DATE +
+                        " TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, " +
+
+                        "FOREIGN KEY (" +
+                        COL_TRANSACTION_ITEM_ID +
+                        ") REFERENCES " +
+                        TABLE_INVENTORY_ITEMS +
+                        "(" + COL_ITEM_ID + "), " +
+
+                        "FOREIGN KEY (" +
+                        COL_TRANSACTION_USER_ID +
+                        ") REFERENCES " +
+                        TABLE_USERS +
+                        "(" + COL_USER_ID + ")" +
+                        ");";
+
+        db.execSQL(createTransactionsTable);
     }
 
     @Override
-    public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-
-        // Drop the inventory item table first because it will eventually depend on
-        // the manufacturer, category, and location tables through foreign keys.
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_INVENTORY_ITEMS);
-
-        // Remove the normalized lookup tables before rebuilding the database.
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_MANUFACTURERS);
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_CATEGORIES);
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_LOCATIONS);
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_USERS);
-
-        // Recreate the database using the newest table definitions.
-        onCreate(db);
+    public void onUpgrade(
+            SQLiteDatabase db,
+            int oldVersion,
+            int newVersion
+    ) {
+        // Version 6 only adds the transaction history table.
+        // Existing users and inventory records stay in place.
+        if (oldVersion < 6) {
+            createInventoryTransactionsTable(db);
+        }
     }
 
-    private long getOrCreateManufacturerId(SQLiteDatabase db, String manufacturerName) {
-        // Look for an existing manufacturer before adding a new one.
+    // -------------------------
+    // Transaction history helper
+    // -------------------------
+
+    private long recordInventoryTransaction(
+            SQLiteDatabase db,
+            int itemId,
+            int userId,
+            String transactionType,
+            Integer oldQuantity,
+            Integer newQuantity,
+            String transactionNote
+    ) {
+        // A history record needs a real item, a real user, and a clear action.
+        if (itemId <= 0
+                || userId <= 0
+                || isBlank(transactionType)) {
+            return -1;
+        }
+
+        ContentValues values = new ContentValues();
+
+        values.put(
+                COL_TRANSACTION_ITEM_ID,
+                itemId
+        );
+
+        values.put(
+                COL_TRANSACTION_USER_ID,
+                userId
+        );
+
+        values.put(
+                COL_TRANSACTION_TYPE,
+                transactionType.trim()
+        );
+
+        // Detail updates and status changes may not have quantity values.
+        // Store null instead of pretending the quantity was zero.
+        if (oldQuantity == null) {
+            values.putNull(COL_OLD_QUANTITY);
+        } else {
+            values.put(
+                    COL_OLD_QUANTITY,
+                    oldQuantity
+            );
+        }
+
+        if (newQuantity == null) {
+            values.putNull(COL_NEW_QUANTITY);
+        } else {
+            values.put(
+                    COL_NEW_QUANTITY,
+                    newQuantity
+            );
+        }
+
+        // Notes are optional, but keeping an empty value is easier to display later.
+        values.put(
+                COL_TRANSACTION_NOTE,
+                transactionNote == null
+                        ? ""
+                        : transactionNote.trim()
+        );
+
+        // The timestamp is left out because SQLite adds CURRENT_TIMESTAMP.
+        return db.insertOrThrow(
+                TABLE_INVENTORY_TRANSACTIONS,
+                null,
+                values
+        );
+    }
+
+    // -------------------------
+    // Lookup-table helpers
+    // -------------------------
+
+    private long getOrCreateManufacturerId(
+            SQLiteDatabase db,
+            String manufacturerName
+    ) {
+        // Check for an existing manufacturer before adding another row.
         try (Cursor cursor = db.query(
                 TABLE_MANUFACTURERS,
                 new String[]{COL_MANUFACTURER_ID},
@@ -189,20 +377,31 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         )) {
             if (cursor.moveToFirst()) {
                 return cursor.getLong(
-                        cursor.getColumnIndexOrThrow(COL_MANUFACTURER_ID)
+                        cursor.getColumnIndexOrThrow(
+                                COL_MANUFACTURER_ID
+                        )
                 );
             }
         }
 
-        // Add the manufacturer only when it is not already in the table.
         ContentValues values = new ContentValues();
-        values.put(COL_MANUFACTURER_NAME, manufacturerName);
+        values.put(
+                COL_MANUFACTURER_NAME,
+                manufacturerName
+        );
 
-        return db.insertOrThrow(TABLE_MANUFACTURERS, null, values);
+        return db.insertOrThrow(
+                TABLE_MANUFACTURERS,
+                null,
+                values
+        );
     }
 
-    private long getOrCreateCategoryId(SQLiteDatabase db, String categoryName) {
-        // Look for an existing category before adding a new one.
+    private long getOrCreateCategoryId(
+            SQLiteDatabase db,
+            String categoryName
+    ) {
+        // Check for an existing category before adding another row.
         try (Cursor cursor = db.query(
                 TABLE_CATEGORIES,
                 new String[]{COL_CATEGORY_ID},
@@ -214,16 +413,24 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         )) {
             if (cursor.moveToFirst()) {
                 return cursor.getLong(
-                        cursor.getColumnIndexOrThrow(COL_CATEGORY_ID)
+                        cursor.getColumnIndexOrThrow(
+                                COL_CATEGORY_ID
+                        )
                 );
             }
         }
 
-        // Add the category only when it is not already in the table.
         ContentValues values = new ContentValues();
-        values.put(COL_CATEGORY_NAME, categoryName);
+        values.put(
+                COL_CATEGORY_NAME,
+                categoryName
+        );
 
-        return db.insertOrThrow(TABLE_CATEGORIES, null, values);
+        return db.insertOrThrow(
+                TABLE_CATEGORIES,
+                null,
+                values
+        );
     }
 
     private long getOrCreateLocationId(
@@ -231,11 +438,13 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             int warehouseRow,
             int warehouseShelf
     ) {
-        // Look for the exact row and shelf combination before creating a new location.
+        // Reuse a warehouse position when the same row and shelf
+        // combination is already stored.
         try (Cursor cursor = db.query(
                 TABLE_LOCATIONS,
                 new String[]{COL_LOCATION_ID},
-                COL_WAREHOUSE_ROW + " = ? AND " + COL_WAREHOUSE_SHELF + " = ?",
+                COL_WAREHOUSE_ROW + " = ? AND " +
+                        COL_WAREHOUSE_SHELF + " = ?",
                 new String[]{
                         String.valueOf(warehouseRow),
                         String.valueOf(warehouseShelf)
@@ -246,18 +455,36 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         )) {
             if (cursor.moveToFirst()) {
                 return cursor.getLong(
-                        cursor.getColumnIndexOrThrow(COL_LOCATION_ID)
+                        cursor.getColumnIndexOrThrow(
+                                COL_LOCATION_ID
+                        )
                 );
             }
         }
 
-        // Add the warehouse location only when that row and shelf do not already exist.
         ContentValues values = new ContentValues();
-        values.put(COL_WAREHOUSE_ROW, warehouseRow);
-        values.put(COL_WAREHOUSE_SHELF, warehouseShelf);
 
-        return db.insertOrThrow(TABLE_LOCATIONS, null, values);
+        values.put(
+                COL_WAREHOUSE_ROW,
+                warehouseRow
+        );
+
+        values.put(
+                COL_WAREHOUSE_SHELF,
+                warehouseShelf
+        );
+
+        return db.insertOrThrow(
+                TABLE_LOCATIONS,
+                null,
+                values
+        );
     }
+
+    // -------------------------
+    // Inventory create
+    // -------------------------
+
     public long createNormalizedInventoryItem(
             String name,
             String manufacturer,
@@ -271,7 +498,74 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             int warehouseShelf,
             String notes
     ) {
-        // Stop the insert when any required inventory information is missing.
+        // Starter records can still use the original method without creating
+        // a user history entry.
+        return createNormalizedInventoryItemInternal(
+                name,
+                manufacturer,
+                category,
+                modelNumber,
+                serialNumber,
+                scuNumber,
+                quantity,
+                lowThreshold,
+                warehouseRow,
+                warehouseShelf,
+                notes,
+                -1,
+                false
+        );
+    }
+
+    public long createNormalizedInventoryItem(
+            String name,
+            String manufacturer,
+            String category,
+            String modelNumber,
+            String serialNumber,
+            String scuNumber,
+            int quantity,
+            int lowThreshold,
+            int warehouseRow,
+            int warehouseShelf,
+            String notes,
+            int userId
+    ) {
+        // Items created through the form include the signed-in user
+        // so the action can be added to inventory history.
+        return createNormalizedInventoryItemInternal(
+                name,
+                manufacturer,
+                category,
+                modelNumber,
+                serialNumber,
+                scuNumber,
+                quantity,
+                lowThreshold,
+                warehouseRow,
+                warehouseShelf,
+                notes,
+                userId,
+                true
+        );
+    }
+
+    private long createNormalizedInventoryItemInternal(
+            String name,
+            String manufacturer,
+            String category,
+            String modelNumber,
+            String serialNumber,
+            String scuNumber,
+            int quantity,
+            int lowThreshold,
+            int warehouseRow,
+            int warehouseShelf,
+            String notes,
+            int userId,
+            boolean recordHistory
+    ) {
+        // Stop the insert when required information is missing.
         if (isBlank(name)
                 || isBlank(manufacturer)
                 || isBlank(category)
@@ -281,7 +575,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             return -1;
         }
 
-        // Quantities and warehouse positions should never use negative or zero values.
+        // Quantities cannot be negative, and warehouse positions
+        // need to use numbers greater than zero.
         if (quantity < 0
                 || lowThreshold < 0
                 || warehouseRow <= 0
@@ -289,11 +584,16 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             return -1;
         }
 
+        // A form-created item needs a valid signed-in user for its history record.
+        if (recordHistory && userId <= 0) {
+            return -1;
+        }
+
         SQLiteDatabase db = getWritableDatabase();
         long newItemId = -1;
 
-        // The lookup records and inventory item all belong to the same operation.
-        // Using a transaction prevents a partial record if one of the inserts fails.
+        // The lookup records, inventory item, and history entry all belong
+        // to the same operation. If one part fails, none of them are kept.
         db.beginTransaction();
 
         try {
@@ -314,17 +614,52 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             );
 
             ContentValues values = new ContentValues();
-            values.put(COL_MANUFACTURER_ID, manufacturerId);
-            values.put(COL_CATEGORY_ID, categoryId);
-            values.put(COL_LOCATION_ID, locationId);
-            values.put(COL_ITEM_NAME, name.trim());
-            values.put(COL_MODEL_NUMBER, modelNumber.trim());
-            values.put(COL_ITEM_SERIAL, serialNumber.trim());
-            values.put(COL_ITEM_SCU, scuNumber.trim());
-            values.put(COL_ITEM_QTY, quantity);
-            values.put(COL_ITEM_THRESHOLD, lowThreshold);
 
-            // Notes are optional, so store an empty value when nothing was entered.
+            values.put(
+                    COL_MANUFACTURER_ID,
+                    manufacturerId
+            );
+
+            values.put(
+                    COL_CATEGORY_ID,
+                    categoryId
+            );
+
+            values.put(
+                    COL_LOCATION_ID,
+                    locationId
+            );
+
+            values.put(
+                    COL_ITEM_NAME,
+                    name.trim()
+            );
+
+            values.put(
+                    COL_MODEL_NUMBER,
+                    modelNumber.trim()
+            );
+
+            values.put(
+                    COL_ITEM_SERIAL,
+                    serialNumber.trim()
+            );
+
+            values.put(
+                    COL_ITEM_SCU,
+                    scuNumber.trim()
+            );
+
+            values.put(
+                    COL_ITEM_QTY,
+                    quantity
+            );
+
+            values.put(
+                    COL_ITEM_THRESHOLD,
+                    lowThreshold
+            );
+
             values.put(
                     COL_ITEM_NOTES,
                     notes == null ? "" : notes.trim()
@@ -336,10 +671,29 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     values
             );
 
-            // Only keep the lookup records and item when every step succeeded.
+            if (recordHistory) {
+                long transactionId = recordInventoryTransaction(
+                        db,
+                        (int) newItemId,
+                        userId,
+                        TRANSACTION_CREATE,
+                        null,
+                        quantity,
+                        "Item created with an opening quantity of " +
+                                quantity +
+                                "."
+                );
+
+                if (transactionId <= 0) {
+                    throw new IllegalStateException(
+                            "The item history record could not be created."
+                    );
+                }
+            }
+
             db.setTransactionSuccessful();
         } catch (RuntimeException exception) {
-            // Leave the result as -1 so the screen can report that the item was not saved.
+            // Return -1 so the screen can report that the item was not saved.
             newItemId = -1;
         } finally {
             db.endTransaction();
@@ -348,54 +702,60 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         return newItemId;
     }
-    public ArrayList<InventoryItem> getAllNormalizedInventoryItems() {
-        ArrayList<InventoryItem> items = new ArrayList<>();
 
+    // -------------------------
+    // Inventory queries
+    // -------------------------
+
+    public ArrayList<InventoryItem> getAllNormalizedInventoryItems() {
+        return getNormalizedInventoryItems(
+                "i." + COL_ITEM_ACTIVE + " = 1",
+                "i." + COL_ITEM_NAME +
+                        " COLLATE NOCASE ASC"
+        );
+    }
+
+    public ArrayList<InventoryItem> getInactiveNormalizedInventoryItems() {
+        return getNormalizedInventoryItems(
+                "i." + COL_ITEM_ACTIVE + " = 0",
+                "i." + COL_ITEM_NAME +
+                        " COLLATE NOCASE ASC"
+        );
+    }
+
+    public ArrayList<InventoryItem> getLowNormalizedInventoryItems() {
+        return getNormalizedInventoryItems(
+                "i." + COL_ITEM_ACTIVE + " = 1 AND " +
+                        "i." + COL_ITEM_QTY +
+                        " <= i." + COL_ITEM_THRESHOLD,
+                "i." + COL_ITEM_QTY + " ASC, " +
+                        "i." + COL_ITEM_NAME +
+                        " COLLATE NOCASE ASC"
+        );
+    }
+
+    private ArrayList<InventoryItem> getNormalizedInventoryItems(
+            String whereClause,
+            String orderBy
+    ) {
+        ArrayList<InventoryItem> items = new ArrayList<>();
         SQLiteDatabase db = getReadableDatabase();
 
-        // Join the lookup tables so each item comes back with complete display values.
         String query =
-                "SELECT " +
-                        "i." + COL_ITEM_ID + ", " +
-                        "i." + COL_MANUFACTURER_ID + ", " +
-                        "m." + COL_MANUFACTURER_NAME + ", " +
-                        "i." + COL_CATEGORY_ID + ", " +
-                        "c." + COL_CATEGORY_NAME + ", " +
-                        "i." + COL_LOCATION_ID + ", " +
-                        "l." + COL_WAREHOUSE_ROW + ", " +
-                        "l." + COL_WAREHOUSE_SHELF + ", " +
-                        "i." + COL_ITEM_NAME + ", " +
-                        "i." + COL_MODEL_NUMBER + ", " +
-                        "i." + COL_ITEM_SERIAL + ", " +
-                        "i." + COL_ITEM_SCU + ", " +
-                        "i." + COL_ITEM_QTY + ", " +
-                        "i." + COL_ITEM_THRESHOLD + ", " +
-                        "i." + COL_ITEM_NOTES + ", " +
-                        "i." + COL_ITEM_ACTIVE + " " +
+                buildNormalizedInventorySelect() +
+                        " WHERE " + whereClause +
+                        " ORDER BY " + orderBy;
 
-                        "FROM " + TABLE_INVENTORY_ITEMS + " i " +
-
-                        "INNER JOIN " + TABLE_MANUFACTURERS + " m ON " +
-                        "i." + COL_MANUFACTURER_ID + " = " +
-                        "m." + COL_MANUFACTURER_ID + " " +
-
-                        "INNER JOIN " + TABLE_CATEGORIES + " c ON " +
-                        "i." + COL_CATEGORY_ID + " = " +
-                        "c." + COL_CATEGORY_ID + " " +
-
-                        "LEFT JOIN " + TABLE_LOCATIONS + " l ON " +
-                        "i." + COL_LOCATION_ID + " = " +
-                        "l." + COL_LOCATION_ID + " " +
-
-                        // Only return active items for the normal inventory view.
-                        "WHERE i." + COL_ITEM_ACTIVE + " = 1 " +
-
-                        // Keep the list consistent by sorting item names without case sensitivity.
-                        "ORDER BY i." + COL_ITEM_NAME + " COLLATE NOCASE ASC";
-
-        try (Cursor cursor = db.rawQuery(query, null)) {
+        try (Cursor cursor = db.rawQuery(
+                query,
+                null
+        )) {
             while (cursor.moveToNext()) {
-                items.add(readNormalizedInventoryItemFromCursor(cursor));
+                items.add(
+                        readNormalizedInventoryItemFromCursor(
+                                cursor
+                        )
+                );
             }
         } finally {
             db.close();
@@ -403,58 +763,30 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         return items;
     }
+
     public InventoryItem getNormalizedInventoryItemById(int itemId) {
-        // Item IDs should always be positive before we query the database.
         if (itemId <= 0) {
             return null;
         }
 
         SQLiteDatabase db = getReadableDatabase();
 
-        // Join the lookup tables so the details screen gets the full item record.
         String query =
-                "SELECT " +
-                        "i." + COL_ITEM_ID + ", " +
-                        "i." + COL_MANUFACTURER_ID + ", " +
-                        "m." + COL_MANUFACTURER_NAME + ", " +
-                        "i." + COL_CATEGORY_ID + ", " +
-                        "c." + COL_CATEGORY_NAME + ", " +
-                        "i." + COL_LOCATION_ID + ", " +
-                        "l." + COL_WAREHOUSE_ROW + ", " +
-                        "l." + COL_WAREHOUSE_SHELF + ", " +
-                        "i." + COL_ITEM_NAME + ", " +
-                        "i." + COL_MODEL_NUMBER + ", " +
-                        "i." + COL_ITEM_SERIAL + ", " +
-                        "i." + COL_ITEM_SCU + ", " +
-                        "i." + COL_ITEM_QTY + ", " +
-                        "i." + COL_ITEM_THRESHOLD + ", " +
-                        "i." + COL_ITEM_NOTES + ", " +
-                        "i." + COL_ITEM_ACTIVE + " " +
-
-                        "FROM " + TABLE_INVENTORY_ITEMS + " i " +
-
-                        "INNER JOIN " + TABLE_MANUFACTURERS + " m ON " +
-                        "i." + COL_MANUFACTURER_ID + " = " +
-                        "m." + COL_MANUFACTURER_ID + " " +
-
-                        "INNER JOIN " + TABLE_CATEGORIES + " c ON " +
-                        "i." + COL_CATEGORY_ID + " = " +
-                        "c." + COL_CATEGORY_ID + " " +
-
-                        "LEFT JOIN " + TABLE_LOCATIONS + " l ON " +
-                        "i." + COL_LOCATION_ID + " = " +
-                        "l." + COL_LOCATION_ID + " " +
-
-                        "WHERE i." + COL_ITEM_ID + " = ?";
+                buildNormalizedInventorySelect() +
+                        " WHERE i." +
+                        COL_ITEM_ID +
+                        " = ?";
 
         InventoryItem item = null;
 
         try (Cursor cursor = db.rawQuery(
                 query,
-                new String[] { String.valueOf(itemId) }
+                new String[]{String.valueOf(itemId)}
         )) {
             if (cursor.moveToFirst()) {
-                item = readNormalizedInventoryItemFromCursor(cursor);
+                item = readNormalizedInventoryItemFromCursor(
+                        cursor
+                );
             }
         } finally {
             db.close();
@@ -462,6 +794,56 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         return item;
     }
+
+    private String buildNormalizedInventorySelect() {
+        // Keep the shared JOIN logic in one place so every inventory
+        // query returns the same set of fields.
+        return "SELECT " +
+                "i." + COL_ITEM_ID + ", " +
+                "i." + COL_MANUFACTURER_ID + ", " +
+                "m." + COL_MANUFACTURER_NAME + ", " +
+                "i." + COL_CATEGORY_ID + ", " +
+                "c." + COL_CATEGORY_NAME + ", " +
+                "i." + COL_LOCATION_ID + ", " +
+                "l." + COL_WAREHOUSE_ROW + ", " +
+                "l." + COL_WAREHOUSE_SHELF + ", " +
+                "i." + COL_ITEM_NAME + ", " +
+                "i." + COL_MODEL_NUMBER + ", " +
+                "i." + COL_ITEM_SERIAL + ", " +
+                "i." + COL_ITEM_SCU + ", " +
+                "i." + COL_ITEM_QTY + ", " +
+                "i." + COL_ITEM_THRESHOLD + ", " +
+                "i." + COL_ITEM_NOTES + ", " +
+                "i." + COL_ITEM_ACTIVE + " " +
+
+                "FROM " + TABLE_INVENTORY_ITEMS + " i " +
+
+                "INNER JOIN " +
+                TABLE_MANUFACTURERS +
+                " m ON i." +
+                COL_MANUFACTURER_ID +
+                " = m." +
+                COL_MANUFACTURER_ID + " " +
+
+                "INNER JOIN " +
+                TABLE_CATEGORIES +
+                " c ON i." +
+                COL_CATEGORY_ID +
+                " = c." +
+                COL_CATEGORY_ID + " " +
+
+                "LEFT JOIN " +
+                TABLE_LOCATIONS +
+                " l ON i." +
+                COL_LOCATION_ID +
+                " = l." +
+                COL_LOCATION_ID;
+    }
+
+    // -------------------------
+    // Inventory updates
+    // -------------------------
+
     public boolean updateNormalizedInventoryDetails(
             int itemId,
             String name,
@@ -470,13 +852,17 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             String modelNumber,
             String serialNumber,
             String scuNumber,
+            int newQuantity,
             int lowThreshold,
             int warehouseRow,
             int warehouseShelf,
-            String notes
+            String notes,
+            int userId
     ) {
-        // Do not run an update without a valid inventory item ID.
-        if (itemId <= 0) {
+        // A saved change needs a valid item, user, and quantity.
+        if (itemId <= 0
+                || userId <= 0
+                || newQuantity < 0) {
             return false;
         }
 
@@ -490,7 +876,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             return false;
         }
 
-        // Prevent invalid threshold and warehouse position values.
+        // Keep invalid threshold and warehouse values out of the database.
         if (lowThreshold < 0
                 || warehouseRow <= 0
                 || warehouseShelf <= 0) {
@@ -500,11 +886,38 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         SQLiteDatabase db = getWritableDatabase();
         boolean wasUpdated = false;
 
-        // The lookup records and inventory update need to succeed together.
-        // The transaction prevents the item from being left partly updated.
+        // The item update and history record belong to the same operation.
+        // If either one fails, neither change is kept.
         db.beginTransaction();
 
         try {
+            Integer oldQuantity = null;
+
+            // Read the current quantity before saving so history can show
+            // the starting and ending values.
+            try (Cursor cursor = db.query(
+                    TABLE_INVENTORY_ITEMS,
+                    new String[]{COL_ITEM_QTY},
+                    COL_ITEM_ID + " = ?",
+                    new String[]{String.valueOf(itemId)},
+                    null,
+                    null,
+                    null
+            )) {
+                if (cursor.moveToFirst()) {
+                    oldQuantity = cursor.getInt(
+                            cursor.getColumnIndexOrThrow(
+                                    COL_ITEM_QTY
+                            )
+                    );
+                }
+            }
+
+            // Stop when the requested inventory item does not exist.
+            if (oldQuantity == null) {
+                return false;
+            }
+
             long manufacturerId = getOrCreateManufacturerId(
                     db,
                     manufacturer.trim()
@@ -522,16 +935,53 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             );
 
             ContentValues values = new ContentValues();
-            values.put(COL_MANUFACTURER_ID, manufacturerId);
-            values.put(COL_CATEGORY_ID, categoryId);
-            values.put(COL_LOCATION_ID, locationId);
-            values.put(COL_ITEM_NAME, name.trim());
-            values.put(COL_MODEL_NUMBER, modelNumber.trim());
-            values.put(COL_ITEM_SERIAL, serialNumber.trim());
-            values.put(COL_ITEM_SCU, scuNumber.trim());
-            values.put(COL_ITEM_THRESHOLD, lowThreshold);
 
-            // Notes are optional, so keep an empty value when nothing was entered.
+            values.put(
+                    COL_MANUFACTURER_ID,
+                    manufacturerId
+            );
+
+            values.put(
+                    COL_CATEGORY_ID,
+                    categoryId
+            );
+
+            values.put(
+                    COL_LOCATION_ID,
+                    locationId
+            );
+
+            values.put(
+                    COL_ITEM_NAME,
+                    name.trim()
+            );
+
+            values.put(
+                    COL_MODEL_NUMBER,
+                    modelNumber.trim()
+            );
+
+            values.put(
+                    COL_ITEM_SERIAL,
+                    serialNumber.trim()
+            );
+
+            values.put(
+                    COL_ITEM_SCU,
+                    scuNumber.trim()
+            );
+
+            // Quantity is now saved from the details screen.
+            values.put(
+                    COL_ITEM_QTY,
+                    newQuantity
+            );
+
+            values.put(
+                    COL_ITEM_THRESHOLD,
+                    lowThreshold
+            );
+
             values.put(
                     COL_ITEM_NOTES,
                     notes == null ? "" : notes.trim()
@@ -541,16 +991,53 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     TABLE_INVENTORY_ITEMS,
                     values,
                     COL_ITEM_ID + " = ?",
-                    new String[] { String.valueOf(itemId) }
+                    new String[]{
+                            String.valueOf(itemId)
+                    }
             );
 
-            wasUpdated = rows > 0;
-
-            if (wasUpdated) {
-                db.setTransactionSuccessful();
+            if (rows <= 0) {
+                return false;
             }
+
+            long transactionId;
+
+            if (oldQuantity != newQuantity) {
+                // Save one completed quantity change instead of one row per button tap.
+                transactionId = recordInventoryTransaction(
+                        db,
+                        itemId,
+                        userId,
+                        TRANSACTION_QUANTITY,
+                        oldQuantity,
+                        newQuantity,
+                        "Quantity changed from " +
+                                oldQuantity +
+                                " to " +
+                                newQuantity +
+                                "."
+                );
+            } else {
+                // Record a normal details update when quantity stayed the same.
+                transactionId = recordInventoryTransaction(
+                        db,
+                        itemId,
+                        userId,
+                        TRANSACTION_UPDATE,
+                        null,
+                        null,
+                        "Item details were updated."
+                );
+            }
+
+            if (transactionId <= 0) {
+                return false;
+            }
+
+            db.setTransactionSuccessful();
+            wasUpdated = true;
         } catch (RuntimeException exception) {
-            // Return false when a duplicate or another database error blocks the update.
+            // Leave the original data unchanged if any part of the save fails.
             wasUpdated = false;
         } finally {
             db.endTransaction();
@@ -559,274 +1046,377 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         return wasUpdated;
     }
+
     public boolean updateNormalizedInventoryQuantity(
             int itemId,
-            int newQuantity
+            int newQuantity,
+            int userId
     ) {
-        // Do not update an inventory item without a valid ID.
-        if (itemId <= 0) {
-            return false;
-        }
-
-        // Inventory quantities should never be negative.
-        if (newQuantity < 0) {
-            return false;
-        }
-
-        SQLiteDatabase db = getWritableDatabase();
-
-        ContentValues values = new ContentValues();
-        values.put(COL_ITEM_QTY, newQuantity);
-
-        int rows = db.update(
-                TABLE_INVENTORY_ITEMS,
-                values,
-                COL_ITEM_ID + " = ?",
-                new String[] { String.valueOf(itemId) }
-        );
-
-        db.close();
-
-        return rows > 0;
-    }
-    public boolean deactivateNormalizedInventoryItem(int itemId) {
-        // Do not change a record without a valid inventory item ID.
-        if (itemId <= 0) {
+        // A quantity change needs a valid item, user, and nonnegative quantity.
+        if (itemId <= 0
+                || userId <= 0
+                || newQuantity < 0) {
             return false;
         }
 
         SQLiteDatabase db = getWritableDatabase();
+        boolean wasUpdated = false;
 
-        ContentValues values = new ContentValues();
+        // Update the quantity and write its history record together.
+        // If either part fails, the original quantity stays unchanged.
+        db.beginTransaction();
 
-        // Keep the inventory record in the database, but hide it from active views.
-        values.put(COL_ITEM_ACTIVE, 0);
+        try {
+            Integer oldQuantity = null;
 
-        int rows = db.update(
-                TABLE_INVENTORY_ITEMS,
-                values,
-                COL_ITEM_ID + " = ?",
-                new String[] { String.valueOf(itemId) }
-        );
-
-        db.close();
-
-        return rows > 0;
-    }
-    public boolean reactivateNormalizedInventoryItem(int itemId) {
-        // Do not change a record without a valid inventory item ID.
-        if (itemId <= 0) {
-            return false;
-        }
-
-        SQLiteDatabase db = getWritableDatabase();
-
-        ContentValues values = new ContentValues();
-
-        // Put the item back into the active inventory without recreating the record.
-        values.put(COL_ITEM_ACTIVE, 1);
-
-        int rows = db.update(
-                TABLE_INVENTORY_ITEMS,
-                values,
-                COL_ITEM_ID + " = ?",
-                new String[] { String.valueOf(itemId) }
-        );
-
-        db.close();
-
-        return rows > 0;
-    }
-    public ArrayList<InventoryItem> getInactiveNormalizedInventoryItems() {
-        ArrayList<InventoryItem> items = new ArrayList<>();
-
-        SQLiteDatabase db = getReadableDatabase();
-
-        // Join the lookup tables so archived items still include all of their
-        // manufacturer, category, and warehouse location information.
-        String query =
-                "SELECT " +
-                        "i." + COL_ITEM_ID + ", " +
-                        "i." + COL_MANUFACTURER_ID + ", " +
-                        "m." + COL_MANUFACTURER_NAME + ", " +
-                        "i." + COL_CATEGORY_ID + ", " +
-                        "c." + COL_CATEGORY_NAME + ", " +
-                        "i." + COL_LOCATION_ID + ", " +
-                        "l." + COL_WAREHOUSE_ROW + ", " +
-                        "l." + COL_WAREHOUSE_SHELF + ", " +
-                        "i." + COL_ITEM_NAME + ", " +
-                        "i." + COL_MODEL_NUMBER + ", " +
-                        "i." + COL_ITEM_SERIAL + ", " +
-                        "i." + COL_ITEM_SCU + ", " +
-                        "i." + COL_ITEM_QTY + ", " +
-                        "i." + COL_ITEM_THRESHOLD + ", " +
-                        "i." + COL_ITEM_NOTES + ", " +
-                        "i." + COL_ITEM_ACTIVE + " " +
-
-                        "FROM " + TABLE_INVENTORY_ITEMS + " i " +
-
-                        "INNER JOIN " + TABLE_MANUFACTURERS + " m ON " +
-                        "i." + COL_MANUFACTURER_ID + " = " +
-                        "m." + COL_MANUFACTURER_ID + " " +
-
-                        "INNER JOIN " + TABLE_CATEGORIES + " c ON " +
-                        "i." + COL_CATEGORY_ID + " = " +
-                        "c." + COL_CATEGORY_ID + " " +
-
-                        "LEFT JOIN " + TABLE_LOCATIONS + " l ON " +
-                        "i." + COL_LOCATION_ID + " = " +
-                        "l." + COL_LOCATION_ID + " " +
-
-                        // Only return records that have been removed from active inventory.
-                        "WHERE i." + COL_ITEM_ACTIVE + " = 0 " +
-
-                        // Keep the archived list predictable for the user.
-                        "ORDER BY i." + COL_ITEM_NAME + " COLLATE NOCASE ASC";
-
-        try (Cursor cursor = db.rawQuery(query, null)) {
-            while (cursor.moveToNext()) {
-                items.add(readNormalizedInventoryItemFromCursor(cursor));
+            // Read the current quantity before changing it so the history
+            // can show exactly what the user changed.
+            try (Cursor cursor = db.query(
+                    TABLE_INVENTORY_ITEMS,
+                    new String[]{COL_ITEM_QTY},
+                    COL_ITEM_ID + " = ?",
+                    new String[]{String.valueOf(itemId)},
+                    null,
+                    null,
+                    null
+            )) {
+                if (cursor.moveToFirst()) {
+                    oldQuantity = cursor.getInt(
+                            cursor.getColumnIndexOrThrow(
+                                    COL_ITEM_QTY
+                            )
+                    );
+                }
             }
+
+            // Do not continue when the inventory item was not found.
+            if (oldQuantity == null) {
+                return false;
+            }
+
+            // There is no reason to create a history row when the value did not change.
+            if (oldQuantity == newQuantity) {
+                return true;
+            }
+
+            ContentValues values = new ContentValues();
+
+            values.put(
+                    COL_ITEM_QTY,
+                    newQuantity
+            );
+
+            int rows = db.update(
+                    TABLE_INVENTORY_ITEMS,
+                    values,
+                    COL_ITEM_ID + " = ?",
+                    new String[]{String.valueOf(itemId)}
+            );
+
+            if (rows <= 0) {
+                return false;
+            }
+
+            // Record the same quantity change before finishing the transaction.
+            long transactionId = recordInventoryTransaction(
+                    db,
+                    itemId,
+                    userId,
+                    TRANSACTION_QUANTITY,
+                    oldQuantity,
+                    newQuantity,
+                    "Quantity changed from " +
+                            oldQuantity +
+                            " to " +
+                            newQuantity +
+                            "."
+            );
+
+            if (transactionId <= 0) {
+                return false;
+            }
+
+            db.setTransactionSuccessful();
+            wasUpdated = true;
+        } catch (RuntimeException exception) {
+            // Keep the database unchanged when either operation fails.
+            wasUpdated = false;
         } finally {
+            db.endTransaction();
             db.close();
         }
 
-        return items;
+        return wasUpdated;
     }
-    public ArrayList<InventoryItem> getLowNormalizedInventoryItems() {
-        ArrayList<InventoryItem> items = new ArrayList<>();
 
-        SQLiteDatabase db = getReadableDatabase();
+    public boolean deactivateNormalizedInventoryItem(
+            int itemId,
+            int userId
+    ) {
+        return setInventoryItemActiveStatus(
+                itemId,
+                userId,
+                false
+        );
+    }
 
-        // Join the lookup tables so low inventory records include the complete
-        // manufacturer, category, and warehouse location information.
-        String query =
-                "SELECT " +
-                        "i." + COL_ITEM_ID + ", " +
-                        "i." + COL_MANUFACTURER_ID + ", " +
-                        "m." + COL_MANUFACTURER_NAME + ", " +
-                        "i." + COL_CATEGORY_ID + ", " +
-                        "c." + COL_CATEGORY_NAME + ", " +
-                        "i." + COL_LOCATION_ID + ", " +
-                        "l." + COL_WAREHOUSE_ROW + ", " +
-                        "l." + COL_WAREHOUSE_SHELF + ", " +
-                        "i." + COL_ITEM_NAME + ", " +
-                        "i." + COL_MODEL_NUMBER + ", " +
-                        "i." + COL_ITEM_SERIAL + ", " +
-                        "i." + COL_ITEM_SCU + ", " +
-                        "i." + COL_ITEM_QTY + ", " +
-                        "i." + COL_ITEM_THRESHOLD + ", " +
-                        "i." + COL_ITEM_NOTES + ", " +
-                        "i." + COL_ITEM_ACTIVE + " " +
+    public boolean reactivateNormalizedInventoryItem(
+            int itemId,
+            int userId
+    ) {
+        return setInventoryItemActiveStatus(
+                itemId,
+                userId,
+                true
+        );
+    }
 
-                        "FROM " + TABLE_INVENTORY_ITEMS + " i " +
+    private boolean setInventoryItemActiveStatus(
+            int itemId,
+            int userId,
+            boolean isActive
+    ) {
+        // A status change needs a valid inventory item and signed-in user.
+        if (itemId <= 0 || userId <= 0) {
+            return false;
+        }
 
-                        "INNER JOIN " + TABLE_MANUFACTURERS + " m ON " +
-                        "i." + COL_MANUFACTURER_ID + " = " +
-                        "m." + COL_MANUFACTURER_ID + " " +
+        SQLiteDatabase db = getWritableDatabase();
+        boolean wasUpdated = false;
 
-                        "INNER JOIN " + TABLE_CATEGORIES + " c ON " +
-                        "i." + COL_CATEGORY_ID + " = " +
-                        "c." + COL_CATEGORY_ID + " " +
+        // Save the active status and its history record together.
+        // If either part fails, the original status stays unchanged.
+        db.beginTransaction();
 
-                        "LEFT JOIN " + TABLE_LOCATIONS + " l ON " +
-                        "i." + COL_LOCATION_ID + " = " +
-                        "l." + COL_LOCATION_ID + " " +
+        try {
+            Integer currentStatus = null;
 
-                        // Only show active items that are at or below their reorder threshold.
-                        "WHERE i." + COL_ITEM_ACTIVE + " = 1 AND " +
-                        "i." + COL_ITEM_QTY + " <= i." + COL_ITEM_THRESHOLD + " " +
-
-                        // Sort by quantity first so the items needing attention appear first.
-                        "ORDER BY i." + COL_ITEM_QTY + " ASC, " +
-                        "i." + COL_ITEM_NAME + " COLLATE NOCASE ASC";
-
-        try (Cursor cursor = db.rawQuery(query, null)) {
-            while (cursor.moveToNext()) {
-                items.add(readNormalizedInventoryItemFromCursor(cursor));
+            // Read the current value first so we do not record the same
+            // status more than once.
+            try (Cursor cursor = db.query(
+                    TABLE_INVENTORY_ITEMS,
+                    new String[]{COL_ITEM_ACTIVE},
+                    COL_ITEM_ID + " = ?",
+                    new String[]{String.valueOf(itemId)},
+                    null,
+                    null,
+                    null
+            )) {
+                if (cursor.moveToFirst()) {
+                    currentStatus = cursor.getInt(
+                            cursor.getColumnIndexOrThrow(
+                                    COL_ITEM_ACTIVE
+                            )
+                    );
+                }
             }
+
+            // Stop when the requested item does not exist.
+            if (currentStatus == null) {
+                return false;
+            }
+
+            int newStatus = isActive ? 1 : 0;
+
+            // Do not add duplicate history when the item already has this status.
+            if (currentStatus == newStatus) {
+                return true;
+            }
+
+            ContentValues values = new ContentValues();
+
+            values.put(
+                    COL_ITEM_ACTIVE,
+                    newStatus
+            );
+
+            int rows = db.update(
+                    TABLE_INVENTORY_ITEMS,
+                    values,
+                    COL_ITEM_ID + " = ?",
+                    new String[]{
+                            String.valueOf(itemId)
+                    }
+            );
+
+            if (rows <= 0) {
+                return false;
+            }
+
+            String transactionType =
+                    isActive
+                            ? TRANSACTION_REACTIVATE
+                            : TRANSACTION_DEACTIVATE;
+
+            String transactionNote =
+                    isActive
+                            ? "Item returned to active inventory."
+                            : "Item removed from active inventory.";
+
+            long transactionId = recordInventoryTransaction(
+                    db,
+                    itemId,
+                    userId,
+                    transactionType,
+                    null,
+                    null,
+                    transactionNote
+            );
+
+            if (transactionId <= 0) {
+                return false;
+            }
+
+            db.setTransactionSuccessful();
+            wasUpdated = true;
+        } catch (RuntimeException exception) {
+            // Keep the original item status when either update fails.
+            wasUpdated = false;
         } finally {
+            db.endTransaction();
             db.close();
         }
 
-        return items;
+        return wasUpdated;
     }
-    private InventoryItem readNormalizedInventoryItemFromCursor(Cursor cursor) {
-        // Keep the normalized cursor parsing in one place so every join stays consistent.
+
+    private boolean setInventoryItemActiveStatus(
+            int itemId,
+            boolean isActive
+    ) {
+        if (itemId <= 0) {
+            return false;
+        }
+
+        SQLiteDatabase db = getWritableDatabase();
+
+        ContentValues values = new ContentValues();
+
+        values.put(
+                COL_ITEM_ACTIVE,
+                isActive ? 1 : 0
+        );
+
+        int rows = db.update(
+                TABLE_INVENTORY_ITEMS,
+                values,
+                COL_ITEM_ID + " = ?",
+                new String[]{
+                        String.valueOf(itemId)
+                }
+        );
+
+        db.close();
+
+        return rows > 0;
+    }
+
+    private InventoryItem readNormalizedInventoryItemFromCursor(
+            Cursor cursor
+    ) {
         int id = cursor.getInt(
-                cursor.getColumnIndexOrThrow(COL_ITEM_ID)
+                cursor.getColumnIndexOrThrow(
+                        COL_ITEM_ID
+                )
         );
 
         long manufacturerId = cursor.getLong(
-                cursor.getColumnIndexOrThrow(COL_MANUFACTURER_ID)
+                cursor.getColumnIndexOrThrow(
+                        COL_MANUFACTURER_ID
+                )
         );
 
         String manufacturerName = cursor.getString(
-                cursor.getColumnIndexOrThrow(COL_MANUFACTURER_NAME)
+                cursor.getColumnIndexOrThrow(
+                        COL_MANUFACTURER_NAME
+                )
         );
 
         long categoryId = cursor.getLong(
-                cursor.getColumnIndexOrThrow(COL_CATEGORY_ID)
+                cursor.getColumnIndexOrThrow(
+                        COL_CATEGORY_ID
+                )
         );
 
         String categoryName = cursor.getString(
-                cursor.getColumnIndexOrThrow(COL_CATEGORY_NAME)
+                cursor.getColumnIndexOrThrow(
+                        COL_CATEGORY_NAME
+                )
         );
 
-        long locationId = cursor.isNull(
-                cursor.getColumnIndexOrThrow(COL_LOCATION_ID)
-        )
-                ? 0
-                : cursor.getLong(
-                cursor.getColumnIndexOrThrow(COL_LOCATION_ID)
+        int locationIndex = cursor.getColumnIndexOrThrow(
+                COL_LOCATION_ID
         );
 
-        int warehouseRow = cursor.isNull(
-                cursor.getColumnIndexOrThrow(COL_WAREHOUSE_ROW)
-        )
-                ? 0
-                : cursor.getInt(
-                cursor.getColumnIndexOrThrow(COL_WAREHOUSE_ROW)
+        long locationId =
+                cursor.isNull(locationIndex)
+                        ? 0
+                        : cursor.getLong(locationIndex);
+
+        int rowIndex = cursor.getColumnIndexOrThrow(
+                COL_WAREHOUSE_ROW
         );
 
-        int warehouseShelf = cursor.isNull(
-                cursor.getColumnIndexOrThrow(COL_WAREHOUSE_SHELF)
-        )
-                ? 0
-                : cursor.getInt(
-                cursor.getColumnIndexOrThrow(COL_WAREHOUSE_SHELF)
+        int warehouseRow =
+                cursor.isNull(rowIndex)
+                        ? 0
+                        : cursor.getInt(rowIndex);
+
+        int shelfIndex = cursor.getColumnIndexOrThrow(
+                COL_WAREHOUSE_SHELF
         );
+
+        int warehouseShelf =
+                cursor.isNull(shelfIndex)
+                        ? 0
+                        : cursor.getInt(shelfIndex);
 
         String name = cursor.getString(
-                cursor.getColumnIndexOrThrow(COL_ITEM_NAME)
+                cursor.getColumnIndexOrThrow(
+                        COL_ITEM_NAME
+                )
         );
 
         String modelNumber = cursor.getString(
-                cursor.getColumnIndexOrThrow(COL_MODEL_NUMBER)
+                cursor.getColumnIndexOrThrow(
+                        COL_MODEL_NUMBER
+                )
         );
 
         String serialNumber = cursor.getString(
-                cursor.getColumnIndexOrThrow(COL_ITEM_SERIAL)
+                cursor.getColumnIndexOrThrow(
+                        COL_ITEM_SERIAL
+                )
         );
 
         String scuNumber = cursor.getString(
-                cursor.getColumnIndexOrThrow(COL_ITEM_SCU)
+                cursor.getColumnIndexOrThrow(
+                        COL_ITEM_SCU
+                )
         );
 
         int quantity = cursor.getInt(
-                cursor.getColumnIndexOrThrow(COL_ITEM_QTY)
+                cursor.getColumnIndexOrThrow(
+                        COL_ITEM_QTY
+                )
         );
 
         int lowThreshold = cursor.getInt(
-                cursor.getColumnIndexOrThrow(COL_ITEM_THRESHOLD)
+                cursor.getColumnIndexOrThrow(
+                        COL_ITEM_THRESHOLD
+                )
         );
 
         String notes = cursor.getString(
-                cursor.getColumnIndexOrThrow(COL_ITEM_NOTES)
+                cursor.getColumnIndexOrThrow(
+                        COL_ITEM_NOTES
+                )
         );
 
         boolean isActive = cursor.getInt(
-                cursor.getColumnIndexOrThrow(COL_ITEM_ACTIVE)
+                cursor.getColumnIndexOrThrow(
+                        COL_ITEM_ACTIVE
+                )
         ) == 1;
 
         return new InventoryItem(
@@ -850,22 +1440,25 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     }
 
     // -------------------------
-    // User login helpers
+    // User account and login helpers
     // -------------------------
 
-    public boolean createUser(String username,
-                              String password,
-                              String firstName,
-                              String lastName,
-                              String title,
-                              String email) {
-
-        // Required fields for account creation
-        if (isBlank(username) || isBlank(password) || isBlank(email)) {
+    public boolean createUser(
+            String username,
+            String password,
+            String firstName,
+            String lastName,
+            String title,
+            String email
+    ) {
+        // Username, password, and email are required.
+        if (isBlank(username)
+                || isBlank(password)
+                || isBlank(email)) {
             return false;
         }
 
-        // Stop duplicate usernames before attempting the insert
+        // Keep duplicate usernames out of the users table.
         if (doesUsernameExist(username.trim())) {
             return false;
         }
@@ -873,57 +1466,127 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         SQLiteDatabase db = getWritableDatabase();
 
         ContentValues values = new ContentValues();
-        values.put(COL_USERNAME, username.trim());
-        values.put(COL_PASSWORD, password.trim());
-        values.put(COL_EMAIL, email.trim());
 
-        // Optional fields, store empty string when left blank
-        values.put(COL_FIRST_NAME, firstName == null ? "" : firstName.trim());
-        values.put(COL_LAST_NAME, lastName == null ? "" : lastName.trim());
-        values.put(COL_TITLE, title == null ? "" : title.trim());
+        values.put(
+                COL_USERNAME,
+                username.trim()
+        );
 
-        long result = db.insert(TABLE_USERS, null, values);
+        values.put(
+                COL_PASSWORD,
+                password.trim()
+        );
+
+        values.put(
+                COL_EMAIL,
+                email.trim()
+        );
+
+        values.put(
+                COL_FIRST_NAME,
+                firstName == null ? "" : firstName.trim()
+        );
+
+        values.put(
+                COL_LAST_NAME,
+                lastName == null ? "" : lastName.trim()
+        );
+
+        values.put(
+                COL_TITLE,
+                title == null ? "" : title.trim()
+        );
+
+        long result = db.insert(
+                TABLE_USERS,
+                null,
+                values
+        );
+
         db.close();
 
         return result != -1;
     }
 
-    public boolean checkUserCredentials(String username, String password) {
+    public boolean checkUserCredentials(
+            String username,
+            String password
+    ) {
+        // Keep this method available for anything that still expects
+        // a basic true or false login result.
+        return getUserSession(
+                username,
+                password
+        ) != null;
+    }
 
-        // Skip the DB call if required inputs are missing
+    public UserSession getUserSession(
+            String username,
+            String password
+    ) {
+        // Do not query the database when either login field is blank.
         if (isBlank(username) || isBlank(password)) {
-            return false;
+            return null;
         }
 
         SQLiteDatabase db = getReadableDatabase();
 
-        String selection = COL_USERNAME + " = ? AND " + COL_PASSWORD + " = ?";
-        String[] selectionArgs = {username.trim(), password.trim()};
+        String selection =
+                COL_USERNAME + " = ? AND " +
+                        COL_PASSWORD + " = ?";
 
-        Cursor cursor = db.query(
+        String[] selectionArgs = {
+                username.trim(),
+                password.trim()
+        };
+
+        UserSession session = null;
+
+        try (Cursor cursor = db.query(
                 TABLE_USERS,
-                new String[]{COL_USER_ID},
+                new String[]{
+                        COL_USER_ID,
+                        COL_USERNAME
+                },
                 selection,
                 selectionArgs,
                 null,
                 null,
                 null
-        );
+        )) {
+            if (cursor.moveToFirst()) {
+                int userId = cursor.getInt(
+                        cursor.getColumnIndexOrThrow(
+                                COL_USER_ID
+                        )
+                );
 
-        boolean isValid = cursor != null && cursor.moveToFirst();
+                String savedUsername = cursor.getString(
+                        cursor.getColumnIndexOrThrow(
+                                COL_USERNAME
+                        )
+                );
 
-        if (cursor != null) {
-            cursor.close();
+                // Keep the ID and username together so the rest of the app
+                // knows exactly which user is currently signed in.
+                session = new UserSession(
+                        userId,
+                        savedUsername
+                );
+            }
+        } finally {
+            db.close();
         }
-        db.close();
 
-        return isValid;
+        return session;
     }
 
     private boolean doesUsernameExist(String username) {
         SQLiteDatabase db = getReadableDatabase();
 
-        Cursor cursor = db.query(
+        boolean exists;
+
+        try (Cursor cursor = db.query(
                 TABLE_USERS,
                 new String[]{COL_USER_ID},
                 COL_USERNAME + " = ?",
@@ -931,38 +1594,142 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 null,
                 null,
                 null
-        );
-
-        boolean exists = cursor != null && cursor.moveToFirst();
-
-        if (cursor != null) {
-            cursor.close();
+        )) {
+            exists = cursor.moveToFirst();
+        } finally {
+            db.close();
         }
-        db.close();
 
         return exists;
     }
 
     private boolean isBlank(String value) {
-        return value == null || value.trim().isEmpty();
+        return value == null
+                || value.trim().isEmpty();
+    }
+    public ArrayList<InventoryTransaction> getInventoryTransactions() {
+        ArrayList<InventoryTransaction> transactions = new ArrayList<>();
+        SQLiteDatabase db = getReadableDatabase();
+
+        // Join the transaction, inventory, and user tables so the history
+        // screen can show readable item names and usernames instead of IDs.
+        String query =
+                "SELECT " +
+                        "t." + COL_TRANSACTION_ID + ", " +
+                        "t." + COL_TRANSACTION_ITEM_ID + ", " +
+                        "t." + COL_TRANSACTION_USER_ID + ", " +
+                        "t." + COL_TRANSACTION_TYPE + ", " +
+                        "t." + COL_OLD_QUANTITY + ", " +
+                        "t." + COL_NEW_QUANTITY + ", " +
+                        "t." + COL_TRANSACTION_NOTE + ", " +
+                        "t." + COL_TRANSACTION_DATE + ", " +
+                        "i." + COL_ITEM_NAME + ", " +
+                        "u." + COL_USERNAME + " " +
+
+                        "FROM " + TABLE_INVENTORY_TRANSACTIONS + " t " +
+
+                        "INNER JOIN " + TABLE_INVENTORY_ITEMS + " i ON " +
+                        "t." + COL_TRANSACTION_ITEM_ID + " = " +
+                        "i." + COL_ITEM_ID + " " +
+
+                        "INNER JOIN " + TABLE_USERS + " u ON " +
+                        "t." + COL_TRANSACTION_USER_ID + " = " +
+                        "u." + COL_USER_ID + " " +
+
+                        // Show the newest transaction first.
+                        "ORDER BY t." + COL_TRANSACTION_ID + " DESC";
+
+        try (Cursor cursor = db.rawQuery(query, null)) {
+            while (cursor.moveToNext()) {
+                int oldQuantityIndex = cursor.getColumnIndexOrThrow(
+                        COL_OLD_QUANTITY
+                );
+
+                int newQuantityIndex = cursor.getColumnIndexOrThrow(
+                        COL_NEW_QUANTITY
+                );
+
+                // Some transaction types do not have quantity values.
+                Integer oldQuantity =
+                        cursor.isNull(oldQuantityIndex)
+                                ? null
+                                : cursor.getInt(oldQuantityIndex);
+
+                Integer newQuantity =
+                        cursor.isNull(newQuantityIndex)
+                                ? null
+                                : cursor.getInt(newQuantityIndex);
+
+                InventoryTransaction transaction =
+                        new InventoryTransaction(
+                                cursor.getInt(
+                                        cursor.getColumnIndexOrThrow(
+                                                COL_TRANSACTION_ID
+                                        )
+                                ),
+                                cursor.getInt(
+                                        cursor.getColumnIndexOrThrow(
+                                                COL_TRANSACTION_ITEM_ID
+                                        )
+                                ),
+                                cursor.getInt(
+                                        cursor.getColumnIndexOrThrow(
+                                                COL_TRANSACTION_USER_ID
+                                        )
+                                ),
+                                cursor.getString(
+                                        cursor.getColumnIndexOrThrow(
+                                                COL_TRANSACTION_TYPE
+                                        )
+                                ),
+                                oldQuantity,
+                                newQuantity,
+                                cursor.getString(
+                                        cursor.getColumnIndexOrThrow(
+                                                COL_TRANSACTION_NOTE
+                                        )
+                                ),
+                                cursor.getString(
+                                        cursor.getColumnIndexOrThrow(
+                                                COL_TRANSACTION_DATE
+                                        )
+                                ),
+                                cursor.getString(
+                                        cursor.getColumnIndexOrThrow(
+                                                COL_ITEM_NAME
+                                        )
+                                ),
+                                cursor.getString(
+                                        cursor.getColumnIndexOrThrow(
+                                                COL_USERNAME
+                                        )
+                                )
+                        );
+
+                transactions.add(transaction);
+            }
+        } finally {
+            db.close();
+        }
+
+        return transactions;
     }
 
     // -------------------------
-    // Model object
+    // Inventory item model
     // -------------------------
 
     public static class InventoryItem {
 
         public int id;
 
-        // These IDs connect the item back to the normalized lookup tables.
         public long manufacturerId;
         public long categoryId;
         public long locationId;
 
-        // These values are returned from the lookup tables for display in the app.
         public String manufacturerName;
         public String categoryName;
+
         public int warehouseRow;
         public int warehouseShelf;
 
@@ -977,10 +1744,6 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         public String notes;
         public boolean isActive;
 
-        /**
-         * This constructor supports inventory records returned from the new
-         * normalized database structure.
-         */
         public InventoryItem(
                 int id,
                 long manufacturerId,
@@ -1021,6 +1784,74 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
             this.notes = notes;
             this.isActive = isActive;
+        }
+    }
+
+    // -------------------------
+    // Inventory history model
+    // -------------------------
+
+    public static class InventoryTransaction {
+
+        public final int transactionId;
+        public final int itemId;
+        public final int userId;
+
+        public final String transactionType;
+
+        public final Integer oldQuantity;
+        public final Integer newQuantity;
+
+        public final String note;
+        public final String transactionDate;
+
+        public final String itemName;
+        public final String username;
+
+        public InventoryTransaction(
+                int transactionId,
+                int itemId,
+                int userId,
+                String transactionType,
+                Integer oldQuantity,
+                Integer newQuantity,
+                String note,
+                String transactionDate,
+                String itemName,
+                String username
+        ) {
+            this.transactionId = transactionId;
+            this.itemId = itemId;
+            this.userId = userId;
+
+            this.transactionType = transactionType;
+
+            this.oldQuantity = oldQuantity;
+            this.newQuantity = newQuantity;
+
+            this.note = note;
+            this.transactionDate = transactionDate;
+
+            this.itemName = itemName;
+            this.username = username;
+        }
+    }
+
+    // -------------------------
+    // Logged-in user model
+    // -------------------------
+
+    public static class UserSession {
+
+        public final int userId;
+        public final String username;
+
+        public UserSession(
+                int userId,
+                String username
+        ) {
+            this.userId = userId;
+            this.username = username;
         }
     }
 }

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="8dp"
+    android:layout_marginTop="6dp"
+    android:layout_marginEnd="8dp"
+    android:layout_marginBottom="6dp"
+    android:background="#2E2E2E"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <!-- Type of inventory action -->
+    <TextView
+        android:id="@+id/historyActionText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Quantity Updated"
+        android:textColor="#7D55CC"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <!-- Item that was changed -->
+    <TextView
+        android:id="@+id/historyItemNameText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="Pallet Jack"
+        android:textColor="#DDDDDD"
+        android:textSize="16sp" />
+
+    <!-- User that made the change -->
+    <TextView
+        android:id="@+id/historyUserText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Changed by: Dustin"
+        android:textColor="#BBBBBB"
+        android:textSize="14sp" />
+
+    <!-- Quantity change -->
+    <TextView
+        android:id="@+id/historyQuantityText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="4 → 3"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <!-- Optional note -->
+    <TextView
+        android:id="@+id/historyNoteText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="Quantity changed from 4 to 3."
+        android:textColor="#CCCCCC"
+        android:textSize="13sp" />
+
+    <!-- Timestamp -->
+    <TextView
+        android:id="@+id/historyDateText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Aug 1, 2026 8:45 PM"
+        android:textColor="#999999"
+        android:textSize="12sp" />
+
+</LinearLayout>

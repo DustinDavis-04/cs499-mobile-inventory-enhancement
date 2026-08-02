@@ -1,5 +1,6 @@
 package com.example.cs360_projecttwo_inventoryapp_dustindavis;
 
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.Editable;
@@ -7,18 +8,17 @@ import android.text.TextWatcher;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
 public class DetailedInfoActivity extends AppCompatActivity {
 
-    // Intent extras used when opening this screen from the app
+    // Intent extras used when opening this screen from the app.
     public static final String EXTRA_MODE = "mode";
     public static final String EXTRA_ITEM_ID = "itemId";
 
-    // Screen modes
+    // Screen modes.
     public static final String MODE_NEW = "NEW";
     public static final String MODE_VIEW = "VIEW";
 
@@ -26,7 +26,7 @@ public class DetailedInfoActivity extends AppCompatActivity {
 
     private EditText itemNameEditText;
     private EditText reorderValueEditText;
-    private TextView qtyValueText;
+    private EditText qtyValueText;
 
     private EditText manufacturerEditText;
     private EditText categoryEditText;
@@ -42,17 +42,20 @@ public class DetailedInfoActivity extends AppCompatActivity {
     private Button editButton;
     private Button saveButton;
 
-    // Current mode and item ID for this screen session
+    // Current mode and item ID for this screen session.
     private String mode;
     private int itemId;
 
-    // Loaded item from the normalized database in VIEW mode
+    // The user ID is needed when a saved change is added to history.
+    private int loggedInUserId;
+
+    // Loaded item from the normalized database in VIEW mode.
     private DatabaseHelper.InventoryItem currentItem;
 
-    // True only after a real change is made during an edit session
+    // True only after a real change is made during an edit session.
     private boolean isDirty = false;
 
-    // True only when fields are unlocked and the user is allowed to edit
+    // True only when fields are unlocked and the user can edit them.
     private boolean isEditing = false;
 
     @Override
@@ -62,12 +65,26 @@ public class DetailedInfoActivity extends AppCompatActivity {
 
         dbHelper = new DatabaseHelper(this);
 
-        // Bind the general inventory fields.
+        // Load the signed-in user before allowing inventory changes.
+        loadUserSession();
+
+        if (loggedInUserId <= 0) {
+            Toast.makeText(
+                    this,
+                    "Your login session could not be loaded.",
+                    Toast.LENGTH_LONG
+            ).show();
+
+            finish();
+            return;
+        }
+
+        // Bind the main inventory fields.
         itemNameEditText = findViewById(R.id.itemNameEditText);
         reorderValueEditText = findViewById(R.id.reorderValueEditText);
         qtyValueText = findViewById(R.id.qtyValueText);
 
-        // These fields now match the normalized manufacturer and category tables.
+        // These fields match the normalized manufacturer and category tables.
         manufacturerEditText = findViewById(R.id.manufacturerEditText);
         categoryEditText = findViewById(R.id.categoryEditText);
         modelNumberEditText = findViewById(R.id.modelNumberEditText);
@@ -75,7 +92,7 @@ public class DetailedInfoActivity extends AppCompatActivity {
         serialEditText = findViewById(R.id.serialEditText);
         scuEditText = findViewById(R.id.scuEditText);
 
-        // Warehouse row and shelf replace the old combined location field.
+        // Warehouse row and shelf are stored as separate location values.
         warehouseRowEditText = findViewById(R.id.warehouseRowEditText);
         warehouseShelfEditText = findViewById(R.id.warehouseShelfEditText);
         notesEditText = findViewById(R.id.notesEditText);
@@ -83,12 +100,13 @@ public class DetailedInfoActivity extends AppCompatActivity {
         editButton = findViewById(R.id.editButton);
         saveButton = findViewById(R.id.saveButton);
 
-        // Bottom navigation back button
+        // Bottom navigation back button.
         LinearLayout backContainer = findViewById(R.id.backContainer);
         backContainer.setOnClickListener(v -> finish());
 
-        // If opened from the SMS link, pull the ID from the URL path.
+        // If the screen opened from an SMS link, pull the item ID from the URL.
         Uri data = getIntent().getData();
+
         if (data != null) {
             String lastSegment = data.getLastPathSegment();
             int deepLinkId = safeInt(lastSegment);
@@ -99,7 +117,7 @@ public class DetailedInfoActivity extends AppCompatActivity {
             }
         }
 
-        // If the deep link did not set a mode, fall back to Intent extras.
+        // If a deep link did not set the mode, use the Intent extras.
         if (mode == null) {
             mode = getIntent().getStringExtra(EXTRA_MODE);
 
@@ -108,10 +126,9 @@ public class DetailedInfoActivity extends AppCompatActivity {
             }
         }
 
-        // Watch for changes so Save only enables after something changes.
+        // Watch the form so Save only turns on after a real change.
         attachDirtyWatchers();
 
-        // Set up the screen based on whether an item is new or already exists.
         if (MODE_NEW.equals(mode)) {
             setupNewItemMode();
         } else {
@@ -119,39 +136,50 @@ public class DetailedInfoActivity extends AppCompatActivity {
         }
     }
 
-    private void setupNewItemMode() {
+    private void loadUserSession() {
+        SharedPreferences preferences = getSharedPreferences(
+                MainActivity.USER_SESSION_PREFS,
+                MODE_PRIVATE
+        );
 
-        // New items start unlocked, and Save is available right away.
+        loggedInUserId = preferences.getInt(
+                MainActivity.KEY_LOGGED_IN_USER_ID,
+                -1
+        );
+    }
+
+    private void setupNewItemMode() {
+        // New items start unlocked and ready to save.
         isEditing = true;
         isDirty = true;
 
-        // Quantity starts at zero because the inventory screen controls changes.
+        // Start at zero, but allow the user to enter an opening quantity.
         qtyValueText.setText("0");
 
         setFieldsEnabled(true);
 
-        // Edit is not needed while creating a new item.
+        // Edit is not needed while a new record is being created.
         setButtonEnabled(editButton, false);
 
-        // Save stays available so the new record can be added.
+        // Save stays available so the new item can be added.
         setButtonEnabled(saveButton, true);
 
         saveButton.setOnClickListener(v -> saveNewItem());
 
-        // Keep the button visible for a consistent layout, but do nothing here.
         editButton.setOnClickListener(v -> {
-            // No action is needed in NEW mode.
+            // No Edit action is needed while creating a new item.
         });
     }
 
     private void setupViewExistingMode() {
-
-        // If a deep link did not set the ID, fall back to the Intent extra.
+        // If a deep link did not provide an ID, use the Intent extra.
         if (itemId <= 0) {
-            itemId = getIntent().getIntExtra(EXTRA_ITEM_ID, -1);
+            itemId = getIntent().getIntExtra(
+                    EXTRA_ITEM_ID,
+                    -1
+            );
         }
 
-        // There is nothing to load without a valid item ID.
         if (itemId <= 0) {
             Toast.makeText(
                     this,
@@ -163,8 +191,10 @@ public class DetailedInfoActivity extends AppCompatActivity {
             return;
         }
 
-        // Load the complete item through the normalized JOIN query.
-        currentItem = dbHelper.getNormalizedInventoryItemById(itemId);
+        // Load the full item through the normalized JOIN query.
+        currentItem = dbHelper.getNormalizedInventoryItemById(
+                itemId
+        );
 
         if (currentItem == null) {
             Toast.makeText(
@@ -177,11 +207,13 @@ public class DetailedInfoActivity extends AppCompatActivity {
             return;
         }
 
-        // Fill the screen with values returned from the normalized database.
+        // Fill the form with the current database values.
         itemNameEditText.setText(currentItem.name);
+
         reorderValueEditText.setText(
                 String.valueOf(currentItem.lowThreshold)
         );
+
         qtyValueText.setText(
                 String.valueOf(currentItem.quantity)
         );
@@ -189,9 +221,11 @@ public class DetailedInfoActivity extends AppCompatActivity {
         manufacturerEditText.setText(
                 valueOrEmpty(currentItem.manufacturerName)
         );
+
         categoryEditText.setText(
                 valueOrEmpty(currentItem.categoryName)
         );
+
         modelNumberEditText.setText(
                 valueOrEmpty(currentItem.modelNumber)
         );
@@ -199,6 +233,7 @@ public class DetailedInfoActivity extends AppCompatActivity {
         serialEditText.setText(
                 valueOrEmpty(currentItem.serialNumber)
         );
+
         scuEditText.setText(
                 valueOrEmpty(currentItem.scuNumber)
         );
@@ -219,7 +254,7 @@ public class DetailedInfoActivity extends AppCompatActivity {
                 valueOrEmpty(currentItem.notes)
         );
 
-        // Existing records begin locked until the user selects Edit.
+        // Existing items start locked until Edit is selected.
         isEditing = false;
         isDirty = false;
 
@@ -233,46 +268,53 @@ public class DetailedInfoActivity extends AppCompatActivity {
     }
 
     private void beginEditSession() {
-
-        // Unlock the form and start watching for an actual change.
+        // Unlock the form and wait for an actual change.
         isEditing = true;
         isDirty = false;
 
         setFieldsEnabled(true);
 
-        // Save turns on after the user changes one of the fields.
+        // Save turns on after one of the watched fields changes.
         setButtonEnabled(saveButton, false);
     }
 
     private void saveNewItem() {
+        String name =
+                itemNameEditText.getText().toString().trim();
 
-        // Pull the required text values from the form.
-        String name = itemNameEditText.getText().toString().trim();
+        String quantityText =
+                qtyValueText.getText().toString().trim();
+
         String reorderText =
                 reorderValueEditText.getText().toString().trim();
 
         String manufacturer =
                 manufacturerEditText.getText().toString().trim();
+
         String category =
                 categoryEditText.getText().toString().trim();
+
         String modelNumber =
                 modelNumberEditText.getText().toString().trim();
 
         String serial =
                 serialEditText.getText().toString().trim();
+
         String scu =
                 scuEditText.getText().toString().trim();
 
         String warehouseRowText =
                 warehouseRowEditText.getText().toString().trim();
+
         String warehouseShelfText =
                 warehouseShelfEditText.getText().toString().trim();
 
         String notes =
                 notesEditText.getText().toString().trim();
 
-        // Check text fields before converting the numeric values.
+        // Check required fields before converting numeric values.
         if (name.isEmpty()
+                || quantityText.isEmpty()
                 || reorderText.isEmpty()
                 || manufacturer.isEmpty()
                 || category.isEmpty()
@@ -291,11 +333,23 @@ public class DetailedInfoActivity extends AppCompatActivity {
             return;
         }
 
+        int quantity = safeInt(quantityText);
         int reorderAmount = safeInt(reorderText);
         int warehouseRow = safeInt(warehouseRowText);
         int warehouseShelf = safeInt(warehouseShelfText);
 
-        // Row and shelf numbers must identify a valid warehouse position.
+        // Quantity and reorder amount cannot be negative.
+        if (quantity < 0 || reorderAmount < 0) {
+            Toast.makeText(
+                    this,
+                    "Quantity and reorder amount cannot be negative.",
+                    Toast.LENGTH_LONG
+            ).show();
+
+            return;
+        }
+
+        // Row and shelf numbers must identify a real warehouse position.
         if (warehouseRow <= 0 || warehouseShelf <= 0) {
             Toast.makeText(
                     this,
@@ -306,7 +360,6 @@ public class DetailedInfoActivity extends AppCompatActivity {
             return;
         }
 
-        // New items begin with zero quantity until the inventory screen updates it.
         long newId = dbHelper.createNormalizedInventoryItem(
                 name,
                 manufacturer,
@@ -314,11 +367,12 @@ public class DetailedInfoActivity extends AppCompatActivity {
                 modelNumber,
                 serial,
                 scu,
-                0,
+                quantity,
                 reorderAmount,
                 warehouseRow,
                 warehouseShelf,
-                notes
+                notes,
+                loggedInUserId
         );
 
         if (newId > 0) {
@@ -339,18 +393,11 @@ public class DetailedInfoActivity extends AppCompatActivity {
     }
 
     private void saveExistingItemChanges() {
-
-        // Nothing can be saved if the item did not load correctly.
-        if (currentItem == null) {
+        if (currentItem == null || !isEditing) {
             return;
         }
 
-        // Updates should only run after the Edit button is selected.
-        if (!isEditing) {
-            return;
-        }
-
-        // Avoid writing to SQLite when nothing was changed.
+        // Avoid writing another database row when nothing changed.
         if (!isDirty) {
             Toast.makeText(
                     this,
@@ -363,31 +410,40 @@ public class DetailedInfoActivity extends AppCompatActivity {
 
         String name =
                 itemNameEditText.getText().toString().trim();
+
+        String quantityText =
+                qtyValueText.getText().toString().trim();
+
         String reorderText =
                 reorderValueEditText.getText().toString().trim();
 
         String manufacturer =
                 manufacturerEditText.getText().toString().trim();
+
         String category =
                 categoryEditText.getText().toString().trim();
+
         String modelNumber =
                 modelNumberEditText.getText().toString().trim();
 
         String serial =
                 serialEditText.getText().toString().trim();
+
         String scu =
                 scuEditText.getText().toString().trim();
 
         String warehouseRowText =
                 warehouseRowEditText.getText().toString().trim();
+
         String warehouseShelfText =
                 warehouseShelfEditText.getText().toString().trim();
 
         String notes =
                 notesEditText.getText().toString().trim();
 
-        // Keep required data from being saved as blank values.
+        // Required values should never be saved as blank text.
         if (name.isEmpty()
+                || quantityText.isEmpty()
                 || reorderText.isEmpty()
                 || manufacturer.isEmpty()
                 || category.isEmpty()
@@ -406,9 +462,20 @@ public class DetailedInfoActivity extends AppCompatActivity {
             return;
         }
 
+        int quantity = safeInt(quantityText);
         int reorderAmount = safeInt(reorderText);
         int warehouseRow = safeInt(warehouseRowText);
         int warehouseShelf = safeInt(warehouseShelfText);
+
+        if (quantity < 0 || reorderAmount < 0) {
+            Toast.makeText(
+                    this,
+                    "Quantity and reorder amount cannot be negative.",
+                    Toast.LENGTH_LONG
+            ).show();
+
+            return;
+        }
 
         if (warehouseRow <= 0 || warehouseShelf <= 0) {
             Toast.makeText(
@@ -420,7 +487,7 @@ public class DetailedInfoActivity extends AppCompatActivity {
             return;
         }
 
-        // Update the item and its lookup-table relationships together.
+        // Save the details, quantity, and one matching history record together.
         boolean updated = dbHelper.updateNormalizedInventoryDetails(
                 currentItem.id,
                 name,
@@ -429,10 +496,12 @@ public class DetailedInfoActivity extends AppCompatActivity {
                 modelNumber,
                 serial,
                 scu,
+                quantity,
                 reorderAmount,
                 warehouseRow,
                 warehouseShelf,
-                notes
+                notes,
+                loggedInUserId
         );
 
         if (updated) {
@@ -453,10 +522,10 @@ public class DetailedInfoActivity extends AppCompatActivity {
     }
 
     private void setFieldsEnabled(boolean enabled) {
-
-        // Quantity remains read only because it is managed on the inventory screen.
+        // All inventory changes now happen through this controlled form.
         itemNameEditText.setEnabled(enabled);
         reorderValueEditText.setEnabled(enabled);
+        qtyValueText.setEnabled(enabled);
 
         manufacturerEditText.setEnabled(enabled);
         categoryEditText.setEnabled(enabled);
@@ -469,11 +538,12 @@ public class DetailedInfoActivity extends AppCompatActivity {
         warehouseShelfEditText.setEnabled(enabled);
         notesEditText.setEnabled(enabled);
 
-        // Dim locked fields so it is obvious that they cannot be changed.
+        // Dim locked fields so view mode is easy to recognize.
         float alpha = enabled ? 1.0f : 0.6f;
 
         itemNameEditText.setAlpha(alpha);
         reorderValueEditText.setAlpha(alpha);
+        qtyValueText.setAlpha(alpha);
 
         manufacturerEditText.setAlpha(alpha);
         categoryEditText.setAlpha(alpha);
@@ -487,14 +557,16 @@ public class DetailedInfoActivity extends AppCompatActivity {
         notesEditText.setAlpha(alpha);
     }
 
-    private void setButtonEnabled(Button button, boolean enabled) {
+    private void setButtonEnabled(
+            Button button,
+            boolean enabled
+    ) {
         button.setEnabled(enabled);
         button.setAlpha(enabled ? 1.0f : 0.45f);
     }
 
     private void attachDirtyWatchers() {
-
-        // Turn on Save only after the user enters edit mode and changes something.
+        // Save only turns on after the user changes something in edit mode.
         TextWatcher watcher = new TextWatcher() {
             @Override
             public void beforeTextChanged(
@@ -503,7 +575,7 @@ public class DetailedInfoActivity extends AppCompatActivity {
                     int count,
                     int after
             ) {
-                // Nothing is needed before the text changes.
+                // Nothing is needed before the value changes.
             }
 
             @Override
@@ -513,7 +585,6 @@ public class DetailedInfoActivity extends AppCompatActivity {
                     int before,
                     int count
             ) {
-                // Only track changes after Edit is selected in VIEW mode.
                 if (!MODE_NEW.equals(mode) && isEditing) {
                     isDirty = true;
                     setButtonEnabled(saveButton, true);
@@ -522,12 +593,13 @@ public class DetailedInfoActivity extends AppCompatActivity {
 
             @Override
             public void afterTextChanged(Editable text) {
-                // Nothing is needed after the text changes.
+                // Nothing is needed after the value changes.
             }
         };
 
         itemNameEditText.addTextChangedListener(watcher);
         reorderValueEditText.addTextChangedListener(watcher);
+        qtyValueText.addTextChangedListener(watcher);
 
         manufacturerEditText.addTextChangedListener(watcher);
         categoryEditText.addTextChangedListener(watcher);
@@ -541,12 +613,12 @@ public class DetailedInfoActivity extends AppCompatActivity {
         notesEditText.addTextChangedListener(watcher);
     }
 
-    // Return an empty string instead of passing a null value to an EditText.
+    // Return an empty string instead of passing null into an EditText.
     private String valueOrEmpty(String value) {
         return value == null ? "" : value;
     }
 
-    // Convert a string to an integer and return zero when it is not valid.
+    // Convert text to an integer and return zero when it is not valid.
     private int safeInt(String value) {
         try {
             return Integer.parseInt(value);

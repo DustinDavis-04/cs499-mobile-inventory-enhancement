@@ -93,13 +93,16 @@
                 android:textColor="#BBBBBB"
                 android:textStyle="bold" />
 
-            <TextView
+            <EditText
                 android:id="@+id/qtyValueText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:backgroundTint="#7D55CC"
+                android:hint="0"
+                android:inputType="number"
                 android:paddingBottom="12dp"
-                android:text="0"
-                android:textColor="#FFFFFF" />
+                android:textColor="#FFFFFF"
+                android:textColorHint="#888888" />
 
             <!-- Manufacturer is stored in its own lookup table -->
             <TextView

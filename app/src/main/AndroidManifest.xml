@@ -24,10 +24,12 @@
         <activity
             android:name=".MainActivity"
             android:exported="true">
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
         </activity>
 
         <!-- Account creation screen -->
@@ -35,6 +37,12 @@
 
         <!-- Main inventory list -->
         <activity android:name=".InventoryActivity" />
+
+        <!-- Inactive inventory records that can be restored -->
+        <activity android:name=".RemovedItemsActivity" />
+
+        <!-- Inventory audit history screen -->
+        <activity android:name=".HistoryActivity" />
 
         <!-- Item details screen -->
         <activity
@@ -56,7 +64,7 @@
 
         </activity>
 
-        <!-- In app SMS style alert screen -->
+        <!-- In-app SMS style alert screen -->
         <activity android:name=".SmsActivity" />
 
     </application>
